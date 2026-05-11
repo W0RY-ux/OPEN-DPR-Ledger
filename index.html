@@ -3,452 +3,553 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistem Transparansi APBN DPR RI - Faktual & Detail</title>
+    <title>TABLIK-DPR | Transparansi Publik</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
     <style>
-        .glass-card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.3); }
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+        
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
         .nav-tab.active { background: #b91c1c; color: white; border-radius: 12px; }
         .role-badge { transition: all 0.3s ease; cursor: pointer; border: 1px solid transparent; }
         .role-active { border: 2px solid #b91c1c; background: #450a0a !important; }
         .hidden-element { display: none !important; }
-        .rab-detail { animation: fadeIn 0.3s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Audit Status Styles */
+        .status-verified { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+        .status-pending { background: #fef9c3; color: #854d0e; border: 1px solid #fef08a; }
+        .status-warning { background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; border-left: 6px solid #f97316; }
+        .status-danger { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; border-left: 6px solid #ef4444; animation: pulse-border 2s infinite; }
+        
+        @keyframes pulse-border {
+            0% { border-color: #fecaca; }
+            50% { border-color: #ef4444; box-shadow: 0 0 15px rgba(239, 68, 68, 0.1); }
+            100% { border-color: #fecaca; }
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-5px); }
+            100% { transform: translateY(0px); }
+        }
+        .logo-float { animation: float 3s ease-in-out infinite; }
+        .animate-fade { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen font-sans text-slate-900">
+<body class="bg-[#f8fafc] min-h-screen text-slate-900">
+
+    <!-- Modal Verifikasi Akun -->
+    <div id="auth-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[100] flex items-center justify-center hidden">
+        <div class="bg-white p-10 rounded-[2.5rem] shadow-2xl w-full max-w-md animate-fade text-center border border-slate-100">
+            <div class="w-20 h-20 bg-red-50 rounded-3xl mx-auto mb-6 flex items-center justify-center">
+                <svg viewBox="0 0 100 100" class="w-12 h-12">
+                    <path d="M50 10 L15 30 L15 70 L50 90 L85 70 L85 30 Z" fill="none" stroke="#dc2626" stroke-width="5"/>
+                    <path d="M35 50 Q50 30 65 50" fill="none" stroke="#dc2626" stroke-width="4" stroke-linecap="round"/>
+                </svg>
+            </div>
+            <h3 class="text-2xl font-extrabold text-slate-900 mb-2">Otentikasi Petugas</h3>
+            <p class="text-sm text-slate-500 mb-8">Gunakan Kode Akses Unit Anda</p>
+            <input type="password" id="auth-code" placeholder="••••" class="w-full p-5 bg-slate-50 rounded-2xl border-2 border-slate-100 text-center text-3xl tracking-[0.6em] outline-none focus:border-red-600 transition-all mb-8">
+            <div class="flex gap-4">
+                <button onclick="closeAuthModal()" class="flex-1 py-4 font-bold text-slate-400 hover:text-slate-600 transition">Batal</button>
+                <button onclick="verifyAccess()" class="flex-1 bg-red-600 text-white font-bold py-4 rounded-2xl shadow-lg hover:bg-red-700 transition">Verifikasi</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Audit BPK -->
+    <div id="audit-note-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[110] flex items-center justify-center hidden">
+        <div class="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-lg animate-fade">
+            <div class="flex items-center gap-4 mb-6">
+                <div class="p-3 bg-orange-100 rounded-2xl">
+                    <svg class="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                </div>
+                <h3 class="text-2xl font-black text-slate-900 uppercase tracking-tighter">Validasi Temuan</h3>
+            </div>
+            <input type="hidden" id="pending-audit-id">
+            <div class="space-y-5">
+                <div>
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Kategori Keputusan</label>
+                    <select id="audit-category" class="w-full p-4 bg-slate-50 rounded-2xl outline-none mt-2 border border-slate-100 font-semibold">
+                        <option value="verified">Sesuai (Clear)</option>
+                        <option value="warning">Peringatan: Anggaran Gemuk</option>
+                        <option value="danger">Bahaya: Indikasi Mark-Up</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Analisis Auditor</label>
+                    <textarea id="audit-comment" rows="4" placeholder="Berikan penjelasan detail temuan anda..." class="w-full p-4 bg-slate-50 rounded-2xl outline-none mt-2 text-sm border border-slate-100"></textarea>
+                </div>
+            </div>
+            <div class="flex gap-4 mt-8">
+                <button onclick="closeAuditModal()" class="flex-1 py-4 font-bold text-slate-400">Tutup</button>
+                <button onclick="saveAuditResult()" class="flex-1 bg-slate-900 text-white font-bold py-4 rounded-2xl shadow-xl hover:bg-black transition">Simpan Laporan</button>
+            </div>
+        </div>
+    </div>
 
     <div class="flex flex-col lg:flex-row min-h-screen">
         
         <!-- Sidebar -->
-        <aside class="w-full lg:w-80 bg-slate-950 text-white p-6 flex flex-col shadow-2xl z-50">
-            <div class="flex items-center gap-3 mb-8">
-                <div class="bg-red-600 p-2 rounded-xl shadow-lg shadow-red-900/50">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+        <aside class="w-full lg:w-80 bg-[#0f172a] text-white p-8 flex flex-col shadow-2xl z-50">
+            <!-- LOGO MASKOT GARUDA TABLIK -->
+            <div class="flex flex-col items-center mb-10">
+                <div class="logo-float mb-4">
+                    <svg width="80" height="80" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <!-- Garuda Body/Shield -->
+                        <path d="M50 5L15 25V55C15 75 50 95 50 95C50 95 85 75 85 55V25L50 5Z" fill="#b91c1c"/>
+                        <!-- Golden Wings Details -->
+                        <path d="M25 35H40M25 45H42M25 55H40" stroke="#fde047" stroke-width="3" stroke-linecap="round"/>
+                        <path d="M75 35H60M75 45H58M75 55H60" stroke="#fde047" stroke-width="3" stroke-linecap="round"/>
+                        <!-- Monitoring Eye/Beak -->
+                        <path d="M50 35L42 45H58L50 35Z" fill="white"/>
+                        <circle cx="50" cy="42" r="3" fill="#0f172a"/>
+                        <!-- Logo Text Style -->
+                        <rect x="35" y="65" width="30" height="4" rx="2" fill="#fde047"/>
+                    </svg>
                 </div>
-                <div>
-                    <h2 class="font-black text-lg leading-tight tracking-tighter text-white">OPEN-DPR <span class="text-red-600">LEDGER</span></h2>
-                    <p class="text-[9px] text-slate-500 font-bold uppercase tracking-[0.2em]">Keterbukaan Informasi Publik</p>
+                <div class="text-center">
+                    <h1 class="text-2xl font-black tracking-tighter italic">TABLIK<span class="text-red-500">DPR</span></h1>
+                    <p class="text-[9px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1">Transparansi Publik</p>
                 </div>
             </div>
 
             <!-- Role Selector -->
-            <div class="mb-8">
-                <p class="text-[10px] text-slate-500 font-bold uppercase mb-3 tracking-widest">Identitas Akses:</p>
-                <div class="space-y-2">
-                    <div id="role-public" onclick="setRole('public')" class="role-badge role-active flex items-center gap-3 p-3 rounded-xl bg-slate-900 hover:bg-slate-800">
-                        <div class="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
-                        <span class="text-xs font-bold">Publik (Masyarakat)</span>
+            <div class="mb-10 p-2 bg-slate-900/50 rounded-2xl border border-white/5">
+                <p class="text-[9px] text-slate-500 font-black uppercase mb-3 ml-2 tracking-widest">Identitas Akses</p>
+                <div class="space-y-1">
+                    <div id="role-public" onclick="selectRole('public')" class="role-badge role-active flex items-center gap-3 p-3 rounded-xl hover:bg-white/5">
+                        <div class="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.5)]"></div>
+                        <span class="text-xs font-bold">Publik</span>
                     </div>
-                    <div id="role-auditor" onclick="setRole('auditor')" class="role-badge flex items-center gap-3 p-3 rounded-xl bg-slate-900 hover:bg-slate-800">
-                        <div class="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]"></div>
-                        <span class="text-xs font-bold">BPK / Auditor Resmi</span>
+                    <div id="role-admin" onclick="openAuthModal('admin')" class="role-badge flex items-center gap-3 p-3 rounded-xl hover:bg-white/5">
+                        <div class="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]"></div>
+                        <span class="text-xs font-bold">Setjen DPR</span>
                     </div>
-                    <div id="role-admin" onclick="setRole('admin')" class="role-badge flex items-center gap-3 p-3 rounded-xl bg-slate-900 hover:bg-slate-800">
-                        <div class="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"></div>
-                        <span class="text-xs font-bold">Setjen / Anggota DPR</span>
+                    <div id="role-auditor" onclick="openAuthModal('auditor')" class="role-badge flex items-center gap-3 p-3 rounded-xl hover:bg-white/5">
+                        <div class="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]"></div>
+                        <span class="text-xs font-bold">BPK Auditor</span>
                     </div>
                 </div>
             </div>
 
             <nav class="space-y-2 flex-grow">
-                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="nav-tab active w-full flex items-center gap-3 p-4 transition">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
-                    <span class="font-bold text-sm text-inherit">Dashboard Utama</span>
+                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="nav-tab active w-full flex items-center gap-4 p-4 transition duration-300">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+                    <span class="font-bold text-sm">Beranda</span>
                 </button>
-                <button onclick="switchTab('komisi')" id="tab-komisi" class="nav-tab w-full flex items-center gap-3 p-4 text-slate-400 hover:text-white transition">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
-                    <span class="font-bold text-sm text-inherit">Data Komisi I-XI</span>
-                </button>
-                <button onclick="switchTab('audit')" id="tab-audit" class="nav-tab w-full flex items-center gap-3 p-4 text-slate-400 hover:text-white transition">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-                    <span class="font-bold text-sm text-inherit">Detail Ledger RAB</span>
+                <button onclick="switchTab('ledger')" id="tab-ledger" class="nav-tab w-full flex items-center gap-4 p-4 text-slate-400 hover:text-white transition duration-300">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                    <span class="font-bold text-sm">Buku Besar Nota</span>
                 </button>
             </nav>
 
-            <div class="mt-auto pt-6 border-t border-slate-800">
-                <p id="role-status" class="text-[10px] text-center text-slate-500 italic mb-4 uppercase tracking-tighter">Mode Baca: Aktif</p>
-                <button class="w-full bg-slate-800 border border-slate-700 hover:bg-slate-700 p-3 rounded-xl font-bold text-[10px] uppercase transition-all flex items-center justify-center gap-2">
-                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
-                    Verifikasi Blockchain
-                </button>
+            <div class="mt-auto pt-8 border-t border-white/5">
+                <div class="flex items-center gap-3 opacity-40 grayscale hover:grayscale-0 transition cursor-help">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/b/bb/Logo_BPK_RI.png" class="h-6" alt="BPK Logo">
+                    <span class="text-[8px] font-black uppercase tracking-widest leading-tight text-slate-400">Official Audit<br>Partner</span>
+                </div>
             </div>
         </aside>
 
         <!-- Main Content -->
-        <main class="flex-grow p-4 lg:p-10 overflow-y-auto max-h-screen">
+        <main class="flex-grow p-6 lg:p-12 overflow-y-auto max-h-screen">
             
-            <!-- DASHBOARD -->
-            <section id="content-dashboard" class="tab-content">
-                <header class="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <header class="mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+                <div>
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="h-1 w-12 bg-red-600 rounded-full"></span>
+                        <p class="text-[10px] font-black text-red-600 uppercase tracking-[0.3em]">Guardian System</p>
+                    </div>
+                    <h2 class="text-4xl font-extrabold text-slate-900 tracking-tighter">Panel Transparansi <span class="text-slate-400">Rakyat</span></h2>
+                    <p class="text-slate-500 mt-2 text-sm max-w-lg leading-relaxed">Melindungi integritas anggaran negara melalui pemantauan bukti nota fisik dan audit digital real-time.</p>
+                </div>
+                <div id="status-display" class="bg-white border p-5 rounded-[2rem] shadow-sm flex items-center gap-4 min-w-[280px]">
+                    <div id="status-icon-circle" class="w-12 h-12 bg-cyan-50 text-cyan-600 rounded-2xl flex items-center justify-center animate-pulse">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                    </div>
                     <div>
-                        <div class="flex items-center gap-2 mb-2">
-                            <span class="px-2 py-1 bg-red-100 text-red-600 text-[10px] font-black rounded uppercase">Real-Time Data</span>
-                            <span class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Update: 11 Mei 2024</span>
-                        </div>
-                        <h2 class="text-4xl font-black text-slate-900 tracking-tighter leading-none mb-2">Sirkulasi Anggaran <span class="text-red-600 underline decoration-red-200">DPR RI</span></h2>
-                        <p class="text-slate-500 max-w-xl">Memantau realisasi dana operasional, kunjungan kerja, dan pemeliharaan gedung melalui ledger publik yang tak terubahkan.</p>
+                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Sesi Aktif</p>
+                        <p id="status-label" class="text-sm font-extrabold text-slate-800">Publik (Monitoring)</p>
                     </div>
-                    <div id="public-alert" class="bg-white border-2 border-slate-100 p-5 rounded-3xl flex items-center gap-4 max-w-sm shadow-sm">
-                        <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center flex-shrink-0">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        </div>
-                        <p class="text-[11px] leading-relaxed text-slate-600 font-medium">Anda sedang menggunakan akses <b>Publik</b>. Semua rincian RAB dapat dilihat namun tidak dapat diubah (Read-Only).</p>
-                    </div>
-                </header>
+                </div>
+            </header>
 
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
-                    <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Total APBN DPR 2024</p>
-                        <h3 class="text-2xl font-black text-slate-900">Rp 12,48 T</h3>
-                        <div class="w-full bg-slate-50 h-1 mt-4 rounded-full"></div>
+            <!-- INPUT PANEL (DPR ONLY) -->
+            <section id="admin-panel" class="hidden-element mb-12 bg-white p-10 rounded-[3rem] shadow-xl border border-slate-100 animate-fade">
+                <div class="flex items-center gap-3 mb-8">
+                    <div class="w-3 h-3 bg-red-600 rounded-full animate-ping"></div>
+                    <h3 class="font-black text-slate-900 text-2xl tracking-tighter uppercase">Pengajuan Anggaran Baru</h3>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nama Agenda</label>
+                        <input type="text" id="in-kegiatan" placeholder="Contoh: RDP Komisi I" class="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-red-600 outline-none transition text-sm font-semibold">
                     </div>
-                    <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Dana Terserap (Q2)</p>
-                        <h3 class="text-2xl font-black text-red-600">Rp 4,12 T</h3>
-                        <div class="w-full bg-slate-50 h-1 mt-4 rounded-full overflow-hidden">
-                            <div class="bg-red-600 h-full w-[33%]"></div>
-                        </div>
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Pilih Komisi</label>
+                        <select id="in-komisi" class="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent outline-none text-sm font-bold">
+                            <option>I</option><option>III</option><option>V</option><option>XI</option>
+                        </select>
                     </div>
-                    <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Rata-rata Ops/Anggota</p>
-                        <h3 class="text-2xl font-black text-slate-900">Rp 128 Juta<span class="text-xs text-slate-400 font-medium italic">/bln</span></h3>
-                    </div>
-                    <div class="bg-slate-950 p-6 rounded-3xl shadow-xl border border-slate-800">
-                        <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Skor Audit AI</p>
-                        <h3 class="text-2xl font-black text-green-400">92.4<span class="text-xs text-slate-600 font-medium">/100</span></h3>
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">No. Nota Vendor</label>
+                        <input type="text" id="in-nota" placeholder="INV/2024/..." class="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-red-600 outline-none text-sm font-semibold">
                     </div>
                 </div>
 
-                <!-- Admin Action (Only for Admin) -->
-                <div id="admin-panel" class="hidden-element mb-10 bg-white p-10 rounded-[2.5rem] shadow-xl border-2 border-red-50 relative overflow-hidden">
-                    <div class="absolute top-0 right-0 p-8 opacity-10">
-                        <svg class="w-32 h-32 text-red-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clip-rule="evenodd"></path></svg>
+                <div class="bg-slate-50 p-8 rounded-[2.5rem] mb-8 border border-slate-100">
+                    <p class="text-[10px] font-black text-slate-400 uppercase mb-6 tracking-widest text-center">Rincian Rencana Anggaran Biaya (RAB)</p>
+                    <div id="rab-inputs" class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 rab-row">
+                            <input type="text" placeholder="Nama Barang/Jasa" class="p-4 bg-white rounded-2xl text-xs font-semibold shadow-sm">
+                            <input type="number" placeholder="Volume" class="p-4 bg-white rounded-2xl text-xs font-semibold shadow-sm qty">
+                            <input type="number" placeholder="Harga Satuan" class="p-4 bg-white rounded-2xl text-xs font-semibold shadow-sm price">
+                        </div>
                     </div>
-                    <h3 class="font-black text-slate-900 mb-6 flex items-center gap-3 text-xl">
-                        <span class="w-2 h-8 bg-red-600 rounded-full"></span>
-                        Input Transaksi Baru (Authorized Only)
-                    </h3>
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-                        <div class="space-y-1">
-                            <label class="text-[10px] font-black text-slate-400 uppercase ml-1">Deskripsi Kegiatan</label>
-                            <input type="text" placeholder="Misal: Rapat Kerja Komisi III" class="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none text-sm focus:ring-2 focus:ring-red-500">
-                        </div>
-                        <div class="space-y-1">
-                            <label class="text-[10px] font-black text-slate-400 uppercase ml-1">Komisi Terkait</label>
-                            <select class="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none text-sm focus:ring-2 focus:ring-red-500">
-                                <option>Komisi I</option>
-                                <option>Komisi II</option>
-                                <option>Komisi III</option>
-                                <option>Komisi IV</option>
-                                <option>Komisi XI</option>
-                            </select>
-                        </div>
-                        <div class="space-y-1">
-                            <label class="text-[10px] font-black text-slate-400 uppercase ml-1">Nominal (Rupiah)</label>
-                            <input type="number" placeholder="IDR" class="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none text-sm focus:ring-2 focus:ring-red-500">
-                        </div>
-                        <div class="flex items-end">
-                            <button class="w-full bg-red-600 text-white font-bold py-4 rounded-2xl hover:bg-red-700 transition shadow-lg shadow-red-200">Sahkan ke Ledger</button>
-                        </div>
+                    <div class="mt-6 flex justify-center">
+                        <button onclick="addRabRow()" class="px-6 py-2 rounded-full border-2 border-red-100 text-[10px] font-black text-red-600 uppercase hover:bg-red-50 transition"> Tambah Item Belanja</button>
+                    </div>
+                </div>
+
+                <button onclick="submitAnggaran()" class="w-full bg-slate-950 text-white font-black py-5 rounded-3xl hover:bg-red-600 transition-all shadow-2xl shadow-slate-200">Kirim untuk Audit BPK</button>
+            </section>
+
+            <!-- DASHBOARD CONTENT -->
+            <section id="content-dashboard" class="tab-content animate-fade">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
+                    <div class="bg-white p-7 rounded-[2.5rem] border shadow-sm group hover:border-red-100 transition">
+                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Total Input</p>
+                        <h3 id="stat-total" class="text-2xl font-black text-slate-900 leading-none">Rp 0</h3>
+                    </div>
+                    <div class="bg-white p-7 rounded-[2.5rem] border shadow-sm border-l-8 border-l-green-500">
+                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Sesuai (Clear)</p>
+                        <h3 id="stat-verified" class="text-2xl font-black text-green-600 leading-none">0</h3>
+                    </div>
+                    <div class="bg-white p-7 rounded-[2.5rem] border shadow-sm border-l-8 border-l-orange-400">
+                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Gemuk (Warning)</p>
+                        <h3 id="stat-warning" class="text-2xl font-black text-orange-500 leading-none">0</h3>
+                    </div>
+                    <div class="bg-white p-7 rounded-[2.5rem] border shadow-sm border-l-8 border-l-red-600">
+                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Mark-up (Critical)</p>
+                        <h3 id="stat-danger" class="text-2xl font-black text-red-600 leading-none">0</h3>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-10">
-                    <!-- Faktual Komisi List -->
-                    <div class="lg:col-span-2 space-y-6">
-                        <div class="flex items-center justify-between">
-                            <h4 class="font-black text-slate-900 text-xl tracking-tight uppercase italic">Pengawasan Mitra Kerja Aktual</h4>
-                            <button onclick="switchTab('komisi')" class="text-xs font-bold text-red-600 hover:underline">Lihat Semua Komisi →</button>
-                        </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="komisi-grid-home">
-                            <!-- Injected by JS -->
+                    <div class="lg:col-span-2">
+                        <h4 class="font-black text-slate-900 text-xl uppercase tracking-tighter mb-8 flex items-center gap-3">
+                            <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            Audit Trail Terkini
+                        </h4>
+                        <div id="audit-feed" class="space-y-5">
+                            <!-- Feed Data -->
                         </div>
                     </div>
 
-                    <!-- Gemini AI Public Guard -->
-                    <div class="bg-slate-950 p-8 rounded-[2rem] shadow-2xl relative overflow-hidden">
-                        <div class="relative z-10">
+                    <div class="space-y-6">
+                        <div class="bg-[#0f172a] p-8 rounded-[3rem] text-white shadow-2xl relative overflow-hidden group">
+                            <div class="absolute -top-10 -right-10 w-32 h-32 bg-red-600/20 rounded-full blur-3xl group-hover:bg-red-600/40 transition"></div>
                             <div class="flex items-center gap-3 mb-6">
-                                <div class="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center animate-pulse">
-                                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                <div class="w-10 h-10 bg-red-600 rounded-2xl flex items-center justify-center">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
                                 </div>
-                                <div>
-                                    <h4 class="text-lg font-black text-white leading-none">Gemini Auditor AI</h4>
-                                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Neural Analysis Active</p>
-                                </div>
+                                <h4 class="font-black text-lg">Integritas Data</h4>
                             </div>
-                            <p id="aiSummary" class="text-xs text-slate-400 italic leading-relaxed mb-8 bg-slate-900 p-4 rounded-2xl border border-slate-800">
-                                "Saya memantau ribuan data RAB untuk mendeteksi 'markup' harga atau ketidaksesuaian output rapat dengan biaya konsumsi."
-                            </p>
-                            <div class="space-y-4">
-                                <input id="userQuery" type="text" placeholder="Tanya detail RAB Komisi III..." class="w-full bg-slate-900 text-white border border-slate-800 rounded-2xl p-4 text-xs outline-none focus:ring-2 focus:ring-indigo-500 transition-all">
-                                <button onclick="askAI()" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-2xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-900/40 flex items-center justify-center gap-2">
-                                    Mulai Analisis AI
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-                                </button>
+                            <p class="text-xs text-slate-400 leading-relaxed mb-6 italic">"Setiap data yang masuk telah di-hash melalui protokol keamanan TABLIK untuk mencegah manipulasi pasca-audit."</p>
+                            <div class="p-4 bg-white/5 rounded-2xl border border-white/10">
+                                <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Status Enkripsi</p>
+                                <p class="text-xs font-mono text-green-400">ACTIVE: AES-256-GCM</p>
                             </div>
-                        </div>
-                        <div class="absolute -bottom-10 -right-10 opacity-10">
-                            <svg class="w-64 h-64 text-indigo-500" fill="currentColor" viewBox="0 0 20 20"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"></path><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"></path></svg>
                         </div>
                     </div>
                 </div>
             </section>
 
-            <!-- KOMISI DATA SECTION -->
-            <section id="content-komisi" class="tab-content hidden animate-in slide-in-from-right duration-500">
-                <header class="mb-10">
-                    <h2 class="text-3xl font-black text-slate-900 uppercase tracking-tighter">Mitra Kerja & <span class="text-red-600">Alokasi Komisi</span></h2>
-                    <p class="text-slate-500 mt-2 italic">Data faktual sesuai pembidangan Komisi DPR RI periode saat ini.</p>
-                </header>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="komisi-grid-full">
-                    <!-- Injected by JS -->
-                </div>
-            </section>
-
-            <!-- AUDIT / RAB SECTION -->
-            <section id="content-audit" class="tab-content hidden">
-                <header class="mb-10">
-                    <h2 class="text-3xl font-black text-slate-900 tracking-tighter">Transparansi <span class="text-red-600">RAB Detail</span></h2>
-                    <p class="text-slate-500 mt-1">Daftar transaksi blockchain dengan rincian anggaran biaya per komponen.</p>
-                </header>
-                <div id="rab-container" class="space-y-6">
-                    <!-- Injected by JS -->
+            <!-- LEDGER CONTENT -->
+            <section id="content-ledger" class="tab-content hidden animate-fade">
+                <div id="ledger-container" class="space-y-12 pb-20">
+                    <!-- Transaksi Detail -->
                 </div>
             </section>
 
         </main>
     </div>
 
+    <!-- Toast -->
+    <div id="toast" class="fixed bottom-10 right-10 p-6 rounded-[2rem] shadow-2xl z-[200] hidden animate-fade text-white font-bold text-sm"></div>
+
     <script>
-        const apiKey = ""; 
         let currentRole = 'public';
-
-        // --- DATA FAKTUAL KOMISI DPR RI ---
-        const dprKomisi = [
-            { id: "I", mitra: "Pertahanan, Luar Negeri, Komunikasi & Informatika", pagu: 154000000000, realisasi: 62000000000 },
-            { id: "II", mitra: "Pemerintahan Dalam Negeri, Otonomi Daerah, Aparatur Negara", pagu: 98000000000, realisasi: 31000000000 },
-            { id: "III", mitra: "Hukum, HAM, dan Keamanan", pagu: 112000000000, realisasi: 45000000000 },
-            { id: "IV", mitra: "Pertanian, Lingkungan Hidup, Kehutanan, Kelautan", pagu: 88000000000, realisasi: 22000000000 },
-            { id: "V", mitra: "Infrastruktur, Perhubungan, Desa & Transmigrasi", pagu: 145000000000, realisasi: 98000000000 },
-            { id: "VI", mitra: "Industri, Investasi, dan Persaingan Usaha", pagu: 76000000000, realisasi: 28000000000 },
-            { id: "VII", mitra: "Energi, Riset & Teknologi, Industri Hijau", pagu: 82000000000, realisasi: 15000000000 },
-            { id: "VIII", mitra: "Agama, Sosial, Pemberdayaan Perempuan & Anak", pagu: 65000000000, realisasi: 18000000000 },
-            { id: "IX", mitra: "Kesehatan, Ketenagakerjaan, Kependudukan", pagu: 94000000000, realisasi: 39000000000 },
-            { id: "X", mitra: "Pendidikan, Olahraga, dan Sejarah", pagu: 120000000000, realisasi: 55000000000 },
-            { id: "XI", mitra: "Keuangan dan Perbankan", pagu: 130000000000, realisasi: 42000000000 }
-        ];
-
-        // --- DATA TRANSAKSI DENGAN RAB DETAIL ---
-        const transactions = [
+        let pendingRole = '';
+        
+        let transactions = [
             {
-                id: "TX-001",
-                komisi: "III",
-                kegiatan: "Rapat Dengar Pendapat (RDP) Kasus HAM Berat",
-                tanggal: "10 Mei 2024",
-                total: 245000000,
+                id: "TBL-9912", 
+                komisi: "I", 
+                kegiatan: "Modernisasi Ruang Sidang Utama", 
+                tanggal: "2024-05-15", 
+                notaNum: "INV-TEC-001", 
+                total: 850000000, 
+                status: "danger",
+                auditNote: "Ditemukan selisih harga pasar sebesar 45% pada item Monitor LED. Memerlukan peninjauan ulang vendor.",
                 rab: [
-                    { item: "Konsumsi (Makan Siang & Snack)", qty: "150 pax", harga: 150000, subtotal: 22500000 },
-                    { item: "Honorarium Narasumber Ahli", qty: "3 Orang", harga: 15000000, subtotal: 45000000 },
-                    { item: "Sewa Sistem Translasi & Dokumentasi", qty: "1 Paket", harga: 12000000, subtotal: 12000000 },
-                    { item: "Akomodasi & Transportasi Saksi Ahli", qty: "5 Orang", harga: 33100000, subtotal: 165500000 }
+                    { item: "Video Wall Samsung 55'", qty: 4, price: 150000000, sub: 600000000 },
+                    { item: "Controller Unit", qty: 1, price: 250000000, sub: 250000000 }
                 ]
             },
             {
-                id: "TX-002",
-                komisi: "I",
-                kegiatan: "Kunjungan Kerja (Kunker) Diplomasi Pertahanan - Singapura",
-                tanggal: "05 Mei 2024",
-                total: 1240500000,
+                id: "TBL-9915", 
+                komisi: "XI", 
+                kegiatan: "Seminar Ekonomi Digital Masyarakat", 
+                tanggal: "2024-05-18", 
+                notaNum: "INV-HOT-882", 
+                total: 45000000, 
+                status: "verified",
+                auditNote: "Anggaran sesuai dengan plafon standar biaya masukan.",
                 rab: [
-                    { item: "Tiket Pesawat Business Class", qty: "12 Orang", harga: 25000000, subtotal: 300000000 },
-                    { item: "Akomodasi Hotel Bintang 5 (3 Malam)", qty: "12 Kamar", harga: 6000000, subtotal: 216000000 },
-                    { item: "Uang Saku Perjalanan Luar Negeri", qty: "12 Orang", harga: 50000000, subtotal: 600000000 },
-                    { item: "Sewa Kendaraan & Protokol", qty: "1 Paket", harga: 124500000, subtotal: 124500000 }
-                ]
-            },
-            {
-                id: "TX-003",
-                komisi: "V",
-                kegiatan: "Peninjauan Lapangan Bendungan IKN",
-                tanggal: "02 Mei 2024",
-                total: 485000000,
-                rab: [
-                    { item: "Sewa Helikopter / Transport Khusus", qty: "2 Trip", harga: 150000000, subtotal: 300000000 },
-                    { item: "Honorarium Pendamping Teknis", qty: "5 Orang", harga: 5000000, subtotal: 25000000 },
-                    { item: "Logistik Lapangan & Tenda", qty: "1 Paket", harga: 60000000, subtotal: 60000000 },
-                    { item: "Biaya Dokumentasi Udara (Drone)", qty: "1 Paket", harga: 100000000, subtotal: 100000000 }
+                    { item: "Konsumsi Peserta", qty: 100, price: 150000, sub: 15000000 },
+                    { item: "Sewa Aula Hotel", qty: 1, price: 30000000, sub: 30000000 }
                 ]
             }
         ];
 
-        // --- CORE FUNCTIONS ---
-        function setRole(role) {
+        // --- AUTH & LOGIC ---
+        function openAuthModal(role) {
+            if(currentRole === role) return;
+            pendingRole = role;
+            document.getElementById('auth-modal').classList.remove('hidden');
+            document.getElementById('auth-code').value = '';
+            document.getElementById('auth-code').focus();
+        }
+
+        function closeAuthModal() { document.getElementById('auth-modal').classList.add('hidden'); }
+
+        function verifyAccess() {
+            const code = document.getElementById('auth-code').value;
+            if ((pendingRole === 'admin' && code === '1234') || (pendingRole === 'auditor' && code === '5678')) {
+                selectRole(pendingRole);
+                closeAuthModal();
+                showToast(`Akses ${pendingRole.toUpperCase()} Berhasil`);
+            } else { showToast("Kode Akses Salah!", true); }
+        }
+
+        function selectRole(role) {
             currentRole = role;
             document.querySelectorAll('.role-badge').forEach(b => b.classList.remove('role-active'));
             document.getElementById(`role-${role}`).classList.add('role-active');
-
-            const adminPanel = document.getElementById('admin-panel');
-            const publicAlert = document.getElementById('public-alert');
-            const statusTxt = document.getElementById('role-status');
-
-            if (role === 'admin') {
-                adminPanel.classList.remove('hidden-element');
-                publicAlert.classList.add('hidden-element');
-                statusTxt.innerText = "Mode Input: Aktif (Sekretariat)";
+            document.getElementById('admin-panel').classList.toggle('hidden-element', role !== 'admin');
+            
+            const label = document.getElementById('status-label');
+            const iconCircle = document.getElementById('status-icon-circle');
+            
+            if(role === 'admin') {
+                label.innerText = "Setjen DPR (Inputer)";
+                iconCircle.className = "w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center";
+            } else if(role === 'auditor') {
+                label.innerText = "BPK Auditor (Verifier)";
+                iconCircle.className = "w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center";
             } else {
-                adminPanel.classList.add('hidden-element');
-                publicAlert.classList.remove('hidden-element');
-                statusTxt.innerText = "Mode Baca: Aktif";
+                label.innerText = "Publik (Monitoring)";
+                iconCircle.className = "w-12 h-12 bg-cyan-50 text-cyan-600 rounded-2xl flex items-center justify-center";
             }
             renderAll();
         }
 
-        function switchTab(tabId) {
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
-            document.getElementById('content-' + tabId).classList.remove('hidden');
-            document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-            document.getElementById('tab-' + tabId).classList.add('active');
+        function addRabRow() {
+            const div = document.createElement('div');
+            div.className = "grid grid-cols-1 md:grid-cols-3 gap-4 rab-row animate-fade";
+            div.innerHTML = `
+                <input type="text" placeholder="Nama Barang/Jasa" class="p-4 bg-white rounded-2xl text-xs font-semibold shadow-sm">
+                <input type="number" placeholder="Volume" class="p-4 bg-white rounded-2xl text-xs font-semibold shadow-sm qty">
+                <input type="number" placeholder="Harga Satuan" class="p-4 bg-white rounded-2xl text-xs font-semibold shadow-sm price">
+            `;
+            document.getElementById('rab-inputs').appendChild(div);
         }
 
+        function submitAnggaran() {
+            const k = document.getElementById('in-kegiatan').value;
+            if(!k) return showToast("Nama kegiatan harus diisi", true);
+
+            const rows = document.querySelectorAll('.rab-row');
+            let total = 0;
+            const rab = [];
+            rows.forEach(r => {
+                const ins = r.querySelectorAll('input');
+                const v = parseFloat(ins[1].value) || 0;
+                const p = parseFloat(ins[2].value) || 0;
+                if(ins[0].value && v*p > 0) {
+                    rab.push({ item: ins[0].value, qty: v, price: p, sub: v*p });
+                    total += v*p;
+                }
+            });
+
+            transactions.unshift({
+                id: "TBL-" + Math.floor(Math.random()*9000 + 1000),
+                komisi: document.getElementById('in-komisi').value,
+                kegiatan: k,
+                tanggal: new Date().toISOString().split('T')[0],
+                total, status: 'pending', auditNote: '',
+                notaNum: document.getElementById('in-nota').value || 'TBA',
+                rab
+            });
+            renderAll();
+            showToast("Anggaran diajukan ke sistem BPK");
+        }
+
+        function openAuditModal(id) {
+            document.getElementById('pending-audit-id').value = id;
+            document.getElementById('audit-note-modal').classList.remove('hidden');
+        }
+
+        function closeAuditModal() { document.getElementById('audit-note-modal').classList.add('hidden'); }
+
+        function saveAuditResult() {
+            const id = document.getElementById('pending-audit-id').value;
+            const tx = transactions.find(t => t.id === id);
+            if(tx) {
+                tx.status = document.getElementById('audit-category').value;
+                tx.auditNote = document.getElementById('audit-comment').value;
+            }
+            closeAuditModal();
+            renderAll();
+            showToast("Laporan audit berhasil disimpan");
+        }
+
+        // --- UTILS ---
         function formatIDR(num) {
             return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num);
         }
 
-        // --- RENDER FUNCTIONS ---
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+            document.getElementById('content-' + tab).classList.remove('hidden');
+            document.querySelectorAll('.nav-tab').forEach(n => n.classList.remove('active'));
+            document.getElementById('tab-' + tab).classList.add('active');
+        }
+
+        function showToast(msg, isError = false) {
+            const t = document.getElementById('toast');
+            t.classList.remove('hidden');
+            t.innerText = msg;
+            t.className = `fixed bottom-10 right-10 p-6 rounded-[2rem] shadow-2xl z-[200] animate-fade font-bold text-sm text-white ${isError ? 'bg-red-600' : 'bg-[#0f172a]'}`;
+            setTimeout(() => t.classList.add('hidden'), 3000);
+        }
+
+        // --- RENDER ---
         function renderAll() {
-            // Home Komisi Grid (Top 4)
-            const homeGrid = document.getElementById('komisi-grid-home');
-            homeGrid.innerHTML = dprKomisi.slice(0, 4).map(k => `
-                <div class="bg-white p-5 rounded-3xl border border-slate-100 hover:border-red-200 transition-all group">
-                    <div class="flex justify-between items-start mb-4">
-                        <div class="w-10 h-10 bg-slate-50 text-slate-800 rounded-xl flex items-center justify-center font-black group-hover:bg-red-600 group-hover:text-white transition-colors">
-                            ${k.id}
-                        </div>
-                        <div class="text-right">
-                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Penyerapan</p>
-                            <p class="text-xs font-black text-slate-800">${((k.realisasi/k.pagu)*100).toFixed(1)}%</p>
-                        </div>
-                    </div>
-                    <h5 class="text-sm font-black text-slate-800 mb-1 leading-tight">Komisi ${k.id}</h5>
-                    <p class="text-[10px] text-slate-500 line-clamp-2 leading-relaxed mb-4">${k.mitra}</p>
-                    <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                        <div class="bg-red-600 h-full" style="width: ${(k.realisasi/k.pagu)*100}%"></div>
-                    </div>
-                </div>
-            `).join('');
+            const totalVal = transactions.reduce((a, b) => a + b.total, 0);
+            document.getElementById('stat-total').innerText = formatIDR(totalVal);
+            document.getElementById('stat-verified').innerText = transactions.filter(t => t.status === 'verified').length;
+            document.getElementById('stat-warning').innerText = transactions.filter(t => t.status === 'warning').length;
+            document.getElementById('stat-danger').innerText = transactions.filter(t => t.status === 'danger').length;
 
-            // Full Komisi Grid
-            const fullGrid = document.getElementById('komisi-grid-full');
-            fullGrid.innerHTML = dprKomisi.map(k => `
-                <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 hover:shadow-xl transition-all">
-                    <div class="flex justify-between mb-4">
-                        <span class="px-3 py-1 bg-slate-900 text-white text-[10px] font-black rounded-lg">KOMISI ${k.id}</span>
-                        <span class="text-[10px] text-green-600 font-bold">Verifikasi BPK ✓</span>
-                    </div>
-                    <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Mitra Kerja Utama:</p>
-                    <p class="text-xs text-slate-700 font-medium mb-6 leading-relaxed">${k.mitra}</p>
-                    <div class="space-y-3">
-                        <div class="flex justify-between text-[11px]">
-                            <span class="text-slate-400">Pagu Tahunan:</span>
-                            <span class="font-bold text-slate-800">${formatIDR(k.pagu)}</span>
-                        </div>
-                        <div class="flex justify-between text-[11px]">
-                            <span class="text-slate-400">Realisasi Saat Ini:</span>
-                            <span class="font-bold text-red-600">${formatIDR(k.realisasi)}</span>
-                        </div>
-                        <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                            <div class="bg-red-600 h-full transition-all duration-1000" style="width: ${(k.realisasi/k.pagu)*100}%"></div>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-
-            // RAB Detail List
-            const rabContainer = document.getElementById('rab-container');
-            rabContainer.innerHTML = transactions.map(t => `
-                <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
-                    <div class="p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-50/50">
+            const feed = document.getElementById('audit-feed');
+            feed.innerHTML = transactions.slice(0, 4).map(t => `
+                <div class="bg-white p-6 rounded-3xl border flex items-center justify-between transition hover:shadow-md border-l-4 
+                    ${t.status === 'danger' ? 'border-l-red-600' : t.status === 'warning' ? 'border-l-orange-400' : t.status === 'verified' ? 'border-l-green-500' : 'border-l-slate-200'}">
+                    <div class="flex items-center gap-5">
+                        <div class="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center font-black text-xs text-slate-400">K-${t.komisi}</div>
                         <div>
-                            <div class="flex items-center gap-3 mb-2">
-                                <span class="px-3 py-1 bg-red-600 text-white text-[10px] font-black rounded-full">KOMISI ${t.komisi}</span>
-                                <span class="text-[10px] text-slate-400 font-mono">${t.id} • ${t.tanggal}</span>
-                            </div>
-                            <h4 class="text-lg font-black text-slate-900 tracking-tight">${t.kegiatan}</h4>
-                        </div>
-                        <div class="text-right">
-                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Pengeluaran</p>
-                            <p class="text-2xl font-black text-slate-900">${formatIDR(t.total)}</p>
+                            <p class="text-sm font-black text-slate-900">${t.kegiatan}</p>
+                            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">${t.id} • ${formatIDR(t.total)}</p>
                         </div>
                     </div>
-                    
-                    <div class="p-8 bg-white border-t border-slate-100">
-                        <p class="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-4 flex items-center gap-2">
-                            <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-                            Rincian Anggaran Biaya (RAB)
-                        </p>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left text-xs border-collapse">
-                                <thead>
-                                    <tr class="text-slate-400 border-b border-slate-50">
-                                        <th class="py-3 font-black uppercase">Item Pekerjaan/Kebutuhan</th>
-                                        <th class="py-3 font-black uppercase text-center">Volume</th>
-                                        <th class="py-3 font-black uppercase text-right">Harga Satuan</th>
-                                        <th class="py-3 font-black uppercase text-right">Sub-Total</th>
-                                    </tr>
-                                </thead>
+                    <span class="text-[8px] font-black uppercase px-3 py-1.5 rounded-full ${t.status === 'danger' ? 'bg-red-50 text-red-600' : t.status === 'warning' ? 'bg-orange-50 text-orange-600' : t.status === 'verified' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}">
+                        ${t.status}
+                    </span>
+                </div>
+            `).join('');
+
+            const ledger = document.getElementById('ledger-container');
+            ledger.innerHTML = transactions.map(t => `
+                <div class="bg-white rounded-[3.5rem] border shadow-sm overflow-hidden animate-fade ${t.status === 'danger' ? 'status-danger' : t.status === 'warning' ? 'status-warning' : ''}">
+                    <div class="p-10 bg-slate-50/40 border-b flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8">
+                        <div class="flex items-center gap-6">
+                            <div class="w-16 h-16 bg-white border rounded-3xl flex flex-col items-center justify-center shadow-sm">
+                                <span class="text-[8px] font-black text-slate-400">UNIT</span>
+                                <span class="text-2xl font-black text-red-600">${t.komisi}</span>
+                            </div>
+                            <div>
+                                <h4 class="text-2xl font-extrabold text-slate-900 tracking-tighter">${t.kegiatan}</h4>
+                                <div class="flex items-center gap-3 mt-1">
+                                    <span class="text-[9px] bg-slate-900 text-white px-3 py-1 rounded-full font-bold uppercase tracking-widest">${t.id}</span>
+                                    <span class="text-[10px] text-slate-400 font-bold italic">Nota Reff: ${t.notaNum}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lg:text-right">
+                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nilai Realisasi</p>
+                            <p class="text-4xl font-black text-slate-900 leading-none">${formatIDR(t.total)}</p>
+                        </div>
+                    </div>
+
+                    <div class="p-10 grid grid-cols-1 lg:grid-cols-2 gap-12">
+                        <div>
+                            <div class="flex items-center gap-2 mb-6">
+                                <div class="w-1 h-4 bg-slate-900 rounded-full"></div>
+                                <p class="text-[11px] font-black text-slate-900 uppercase tracking-widest">Detail Item Pembelian</p>
+                            </div>
+                            <table class="w-full text-xs">
+                                <thead class="text-slate-400 border-b"><tr class="text-[9px] font-black uppercase"><th class="pb-3 text-left">Deskripsi</th><th class="text-right">Qty</th><th class="text-right">Subtotal</th></tr></thead>
                                 <tbody>
                                     ${t.rab.map(r => `
-                                        <tr class="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                            <td class="py-4 font-bold text-slate-700">${r.item}</td>
-                                            <td class="py-4 text-center text-slate-500 font-medium">${r.qty}</td>
-                                            <td class="py-4 text-right text-slate-500 font-mono">${formatIDR(r.harga)}</td>
-                                            <td class="py-4 text-right font-black text-slate-900 font-mono">${formatIDR(r.subtotal)}</td>
+                                        <tr class="border-b border-slate-50">
+                                            <td class="py-4 font-extrabold text-slate-700">${r.item}</td>
+                                            <td class="text-right text-slate-500">${r.qty} unit</td>
+                                            <td class="text-right font-black text-slate-900">${formatIDR(r.sub)}</td>
                                         </tr>
                                     `).join('')}
                                 </tbody>
                             </table>
                         </div>
-                        <div class="mt-6 p-4 bg-green-50 rounded-2xl flex justify-between items-center">
-                            <div class="flex items-center gap-2">
-                                <svg class="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
-                                <span class="text-[10px] font-black text-green-700 uppercase">Blockchain Checksum Valid</span>
+
+                        <div class="space-y-6">
+                            <div class="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 relative">
+                                <div class="absolute top-6 right-8">
+                                    <svg class="w-12 h-12 text-slate-200" fill="currentColor" viewBox="0 0 24 24"><path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z"></path></svg>
+                                </div>
+                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Laporan Hasil Pemeriksaan (LHP)</p>
+                                
+                                ${t.auditNote ? `
+                                    <p class="text-sm italic text-slate-600 leading-relaxed font-medium">"${t.auditNote}"</p>
+                                    <div class="mt-6 pt-6 border-t border-slate-200 flex justify-between items-center">
+                                        <span class="text-[9px] font-black text-slate-900">Petugas: BPK-UNIT-01</span>
+                                        <span class="text-[9px] font-bold text-slate-400">${t.tanggal}</span>
+                                    </div>
+                                ` : `
+                                    <div class="py-10 text-center">
+                                        <p class="text-[11px] font-black text-slate-300 italic uppercase">Menunggu Antrean Audit BPK RI</p>
+                                    </div>
+                                `}
+
+                                ${currentRole === 'auditor' ? `
+                                    <button onclick="openAuditModal('${t.id}')" class="w-full mt-6 bg-slate-900 text-white py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-orange-600 transition">Valuasi Anggaran</button>
+                                ` : ''}
                             </div>
-                            <span class="text-[10px] font-mono text-green-700 opacity-50">Hash: 0x82f...a12e</span>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="p-4 bg-white border border-slate-100 rounded-2xl flex flex-col items-center">
+                                    <span class="text-[8px] font-black text-slate-400 mb-1 uppercase tracking-widest">Digital Sign</span>
+                                    <div class="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center text-white">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                                    </div>
+                                </div>
+                                <div class="p-4 bg-white border border-slate-100 rounded-2xl flex flex-col items-center">
+                                    <span class="text-[8px] font-black text-slate-400 mb-1 uppercase tracking-widest">Publik Ver</span>
+                                    <div class="w-8 h-8 bg-cyan-500 rounded-lg flex items-center justify-center text-white">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="3" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-width="3" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             `).join('');
         }
 
-        // --- AI LOGIC ---
-        async function askAI() {
-            const query = document.getElementById('userQuery').value;
-            if (!query) return;
-            const summaryBox = document.getElementById('aiSummary');
-            summaryBox.innerText = "⏳ AI Gemini sedang membedah rincian RAB di database blockchain...";
-            
-            const prompt = `Analisis pertanyaan publik: "${query}". Gunakan konteks data faktual: Komisi I menangani Kominfo & Pertahanan (Pagu Rp 154M), Komisi III menangani Hukum (Pagu Rp 112M). Contoh transaksi RAB Kunker Singapura adalah Rp 1.2 Miliar untuk 12 orang. Jawab secara transparan dan kritis (maksimal 3 kalimat).`;
-            
-            try {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                });
-                const data = await response.json();
-                summaryBox.innerText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            } catch (e) {
-                summaryBox.innerText = "Layanan analisis AI sedang tidak tersedia.";
-            }
-        }
-
-        window.onload = () => {
-            renderAll();
-            setRole('public');
-        };
+        window.onload = renderAll;
     </script>
 </body>
 </html>
