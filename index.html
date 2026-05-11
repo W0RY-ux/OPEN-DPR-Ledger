@@ -1,575 +1,735 @@
-<!DOCTYPE html>
-<html lang="id">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TABLIK-DPR | Transparansi & Interaksi</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+import React, { useState } from 'react';
+
+export default function App() {
+    // --- STATE MANAGEMENT ---
+    const [currentRole, setCurrentRole] = useState('public');
+    const [activeTab, setActiveTab] = useState('dashboard');
+    const [userVotes, setUserVotes] = useState({});
+    
+    // Transaksi dengan struktur Audit Birokrasi BPK yang baru
+    const [transactions, setTransactions] = useState([
+        {
+            id: "TBL-101", komisi: "XI", kegiatan: "Pengadaan Laptop Sekretariat", tanggal: "2024-05-18",
+            notaNum: "INV-990-JKT", total: 45000000,
+            audit: {
+                phase: 4, // 0: Pending, 1: Entry Brief, 2: Lapangan, 3: KTPP, 4: LHP
+                status: "verified", // pending, verified, warning, danger
+                note: "Berdasarkan uji petik, barang telah dicek fisik dan spesifikasi sesuai dengan nota terlampir. Tidak ditemukan indikasi kerugian negara.",
+                docEntryBrief: "https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&q=80&w=400", // Mock PDF
+                docLHP: "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=400" // Mock PDF
+            },
+            rab: [
+                { item: "MacBook Air M2", qty: 2, price: 22500000, sub: 45000000, imgNota: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=400", imgProduk: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&q=80&w=400" }
+            ],
+            votes: { 'v-sekali': 8, 'v-puas': 12, 'v-netral': 3, 'v-kurang': 1, 'v-tidak': 0 }
+        }
+    ]);
+
+    // Modals & UI States
+    const [toast, setToast] = useState({ visible: false, msg: '', isError: false });
+    const [authModal, setAuthModal] = useState({ visible: false, pendingRole: '', code: '' });
+    const [auditModal, setAuditModal] = useState({ visible: false, txId: null, phase: 1, category: 'pending', comment: '', doc: null });
+    const [imageModal, setImageModal] = useState({ visible: false, src: '', caption: '' });
+    const [reportModal, setReportModal] = useState({ visible: false, tx: null });
+
+    // Form Anggaran (DPR Panel)
+    const [formKegiatan, setFormKegiatan] = useState('');
+    const [formNota, setFormNota] = useState('');
+    const [formKomisi, setFormKomisi] = useState('I');
+    const [rabInputs, setRabInputs] = useState([
+        { id: Date.now(), item: '', qty: '', price: '', imgNota: null, imgProduk: null }
+    ]);
+
+    // --- HELPERS ---
+    const formatIDR = (num) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num);
+
+    const showToast = (msg, isError = false) => {
+        setToast({ visible: true, msg, isError });
+        setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
+    };
+
+    const getRoleLabel = () => {
+        if(currentRole === 'admin') return "Setjen DPR";
+        if(currentRole === 'auditor') return "BPK Auditor";
+        return "Masyarakat Umum";
+    };
+
+    const getPhaseLabel = (phase) => {
+        const labels = ['Menunggu BPK', '1. Entry Briefing', '2. Pemeriksaan Lapangan', '3. Konsep Temuan (KTPP)', '4. Laporan Final (LHP)'];
+        return labels[phase] || 'Unknown';
+    };
+
+    // --- LOGIC FUNCTIONS ---
+    const selectRole = (role) => {
+        setCurrentRole(role);
+    };
+
+    const openAuthModal = (role) => {
+        if (currentRole === role) return;
+        setAuthModal({ visible: true, pendingRole: role, code: '' });
+    };
+
+    const verifyAccess = () => {
+        const { code, pendingRole } = authModal;
+        if ((pendingRole === 'admin' && code === '1234') || (pendingRole === 'auditor' && code === '5678')) {
+            setCurrentRole(pendingRole);
+            setAuthModal({ visible: false, pendingRole: '', code: '' });
+            showToast("Akses Terverifikasi");
+        } else {
+            showToast("Kode Akses Salah", true);
+        }
+    };
+
+    // Form Handlers
+    const addRabRow = () => setRabInputs([...rabInputs, { id: Date.now(), item: '', qty: '', price: '', imgNota: null, imgProduk: null }]);
+    const updateRabRow = (id, field, value) => setRabInputs(rabInputs.map(r => r.id === id ? { ...r, [field]: value } : r));
+    const removeRabRow = (id) => setRabInputs(rabInputs.filter(r => r.id !== id));
+
+    const handleFile = (e, id, type) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                if(type === 'audit') {
+                    setAuditModal(prev => ({ ...prev, doc: ev.target.result }));
+                } else {
+                    updateRabRow(id, type === 'nota' ? 'imgNota' : 'imgProduk', ev.target.result);
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const submitAnggaran = () => {
+        if (!formKegiatan) return showToast("Judul kegiatan wajib diisi", true);
+
+        let total = 0;
+        const rab = [];
+        rabInputs.forEach(r => {
+            const qty = parseFloat(r.qty) || 0;
+            const price = parseFloat(r.price) || 0;
+            if (r.item && qty * price > 0) {
+                rab.push({ item: r.item, qty, price, sub: qty * price, imgNota: r.imgNota, imgProduk: r.imgProduk });
+                total += qty * price;
+            }
+        });
+
+        const newTx = {
+            id: "TBL-" + Math.floor(Math.random() * 900 + 100),
+            komisi: formKomisi, kegiatan: formKegiatan, tanggal: new Date().toLocaleDateString('id-ID'),
+            total, notaNum: formNota || 'TBA', rab,
+            audit: { phase: 0, status: 'pending', note: '', docEntryBrief: null, docLHP: null },
+            votes: { 'v-sekali': 0, 'v-puas': 0, 'v-netral': 0, 'v-kurang': 0, 'v-tidak': 0 }
+        };
+
+        setTransactions([newTx, ...transactions]);
+        showToast("Berhasil diajukan!");
+        setFormKegiatan(''); setFormNota(''); setFormKomisi('I');
+        setRabInputs([{ id: Date.now(), item: '', qty: '', price: '', imgNota: null, imgProduk: null }]);
+    };
+
+    // Voting
+    const castVote = (txId, type) => {
+        if (currentRole !== 'public') {
+            return showToast("Voting hanya diperbolehkan untuk Masyarakat guna mencegah konflik kepentingan.", true);
+        }
+
+        const txIndex = transactions.findIndex(t => t.id === txId);
+        if (txIndex === -1) return;
         
-        body { font-family: 'Plus Jakarta Sans', sans-serif; scroll-behavior: smooth; }
-        .nav-tab.active { background: #b91c1c; color: white; border-radius: 12px; }
-        .role-badge { transition: all 0.3s ease; cursor: pointer; border: 1px solid transparent; }
-        .role-active { border: 2px solid #b91c1c; background: #450a0a !important; }
-        .hidden-element { display: none !important; }
+        const newTx = { ...transactions[txIndex] };
+        const newVotes = { ...newTx.votes };
+        const newUserVotes = { ...userVotes };
+
+        if (newUserVotes[txId]) {
+            const oldType = newUserVotes[txId];
+            if (oldType === type) {
+                newVotes[oldType]--;
+                delete newUserVotes[txId];
+                showToast("Suara Anda telah ditarik kembali");
+            } else {
+                newVotes[oldType]--;
+                newVotes[type]++;
+                newUserVotes[txId] = type;
+                showToast("Pilihan Anda telah diubah");
+            }
+        } else {
+            newVotes[type]++;
+            newUserVotes[txId] = type;
+            showToast("Terima kasih atas suaranya!");
+        }
+
+        newTx.votes = newVotes;
+        const newTransactions = [...transactions];
+        newTransactions[txIndex] = newTx;
         
-        .animate-fade { animation: fadeIn 0.3s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        
-        .vote-btn { transition: all 0.2s; position: relative; }
-        .vote-btn:hover { transform: translateY(-5px); }
-        .vote-btn.selected { background: #fee2e2; border-color: #ef4444; border-radius: 1rem; padding: 4px; transform: scale(1.1); }
-        
-        .img-zoom { transition: transform 0.3s ease; cursor: zoom-in; }
-        .img-zoom:hover { transform: scale(1.05); }
-        
-        .modal-overlay { background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(8px); }
-    </style>
-</head>
-<body class="bg-[#f8fafc] min-h-screen text-slate-900">
+        setTransactions(newTransactions);
+        setUserVotes(newUserVotes);
+    };
 
-    <!-- Modal Image Preview -->
-    <div id="image-modal" class="fixed inset-0 z-[200] modal-overlay flex items-center justify-center hidden p-4" onclick="closeImageModal()">
-        <div class="relative max-w-4xl w-full flex flex-col items-center">
-            <button class="absolute -top-12 right-0 text-white text-4xl font-light">&times;</button>
-            <img id="modal-img-target" src="" class="max-h-[80vh] w-auto rounded-2xl shadow-2xl border-4 border-white/10">
-            <p id="modal-img-caption" class="text-white mt-6 font-bold text-lg tracking-tight bg-black/40 px-6 py-2 rounded-full"></p>
-        </div>
-    </div>
+    // Audit BPK Handlers
+    const openAuditModal = (id) => {
+        const tx = transactions.find(t => t.id === id);
+        if (!tx) return;
+        setAuditModal({
+            visible: true, txId: id, 
+            phase: tx.audit.phase === 0 ? 1 : tx.audit.phase, 
+            category: tx.audit.status === 'pending' ? 'verified' : tx.audit.status, 
+            comment: tx.audit.note || '',
+            doc: null
+        });
+    };
 
-    <!-- Modal Verifikasi Akun -->
-    <div id="auth-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[100] flex items-center justify-center hidden">
-        <div class="bg-white p-10 rounded-[2.5rem] shadow-2xl w-full max-w-md animate-fade text-center border border-slate-100">
-            <img src="https://upload.wikimedia.org/wikipedia/commons/b/bb/Logo_BPK_RI.png" class="h-20 mx-auto mb-6" alt="BPK Logo">
-            <h3 class="text-2xl font-extrabold text-slate-900 mb-2">Otentikasi Petugas</h3>
-            <p class="text-sm text-slate-500 mb-8">Gunakan Kode Akses Unit Anda</p>
-            <input type="password" id="auth-code" placeholder="••••" class="w-full p-5 bg-slate-50 rounded-2xl border-2 border-slate-100 text-center text-3xl tracking-[0.6em] outline-none focus:border-red-600 transition-all mb-8">
-            <div class="flex gap-4">
-                <button onclick="closeAuthModal()" class="flex-1 py-4 font-bold text-slate-400 hover:text-slate-600 transition">Batal</button>
-                <button onclick="verifyAccess()" class="flex-1 bg-red-600 text-white font-bold py-4 rounded-2xl shadow-lg hover:bg-red-700 transition">Verifikasi</button>
-            </div>
-        </div>
-    </div>
+    const saveAuditResult = () => {
+        const { txId, phase, category, comment, doc } = auditModal;
+        setTransactions(transactions.map(t => {
+            if (t.id === txId) {
+                const updatedAudit = { ...t.audit, phase: parseInt(phase), status: category, note: comment };
+                if (phase == 1 && doc) updatedAudit.docEntryBrief = doc;
+                if (phase == 4 && doc) updatedAudit.docLHP = doc;
+                return { ...t, audit: updatedAudit };
+            }
+            return t;
+        }));
+        setAuditModal({ visible: false, txId: null, phase: 1, category: 'verified', comment: '', doc: null });
+        showToast("Progres Audit BPK Telah Disimpan");
+    };
 
-    <!-- Modal Audit BPK (Edit/Add) -->
-    <div id="audit-note-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[110] flex items-center justify-center hidden">
-        <div class="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-lg animate-fade border-t-8 border-amber-500">
-            <div class="flex items-center gap-4 mb-6">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/b/bb/Logo_BPK_RI.png" class="h-12" alt="BPK Logo">
-                <h3 class="text-2xl font-black text-slate-900 uppercase tracking-tighter">Panel Keputusan BPK</h3>
-            </div>
-            <input type="hidden" id="pending-audit-id">
-            <div class="space-y-5">
-                <div>
-                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Kategori Keputusan</label>
-                    <select id="audit-category" class="w-full p-4 bg-slate-50 rounded-2xl outline-none mt-2 border border-slate-100 font-semibold text-sm">
-                        <option value="verified">Sesuai (Clear)</option>
-                        <option value="warning">Peringatan: Anggaran Gemuk</option>
-                        <option value="danger">Bahaya: Indikasi Mark-Up</option>
-                        <option value="pending">Reset ke Menunggu Audit</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Analisis Auditor</label>
-                    <textarea id="audit-comment" rows="4" placeholder="Berikan penjelasan detail temuan anda..." class="w-full p-4 bg-slate-50 rounded-2xl outline-none mt-2 text-sm border border-slate-100"></textarea>
-                </div>
-            </div>
-            <div class="flex gap-4 mt-8">
-                <button onclick="closeAuditModal()" class="flex-1 py-4 font-bold text-slate-400">Tutup</button>
-                <button onclick="saveAuditResult()" class="flex-1 bg-slate-950 text-white font-bold py-4 rounded-2xl shadow-xl hover:bg-black transition">Simpan Laporan</button>
-            </div>
-        </div>
-    </div>
+    // --- CALCULATIONS ---
+    const totalVal = transactions.reduce((a, b) => a + b.total, 0);
+    const countVerified = transactions.filter(t => t.audit.status === 'verified').length;
+    const countWarning = transactions.filter(t => t.audit.status === 'warning').length;
+    const countDanger = transactions.filter(t => t.audit.status === 'danger').length;
+    const totalPartisipasi = transactions.reduce((acc, t) => acc + Object.values(t.votes).reduce((a, b) => a + b, 0), 0);
 
-    <div class="flex flex-col lg:flex-row min-h-screen">
-        
-        <!-- Sidebar -->
-        <aside class="w-full lg:w-80 bg-[#0f172a] text-white p-8 flex flex-col shadow-2xl z-50">
-            <div class="flex flex-col items-center mb-10 text-center">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/b/bb/Logo_BPK_RI.png" class="h-20 mb-4" alt="Logo BPK RI">
-                <h1 class="text-2xl font-black tracking-tighter italic">TABLIK<span class="text-red-500">DPR</span></h1>
-                <p class="text-[9px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1">Transparansi Visual x Audit</p>
-            </div>
+    return (
+        <div className="bg-[#f8fafc] min-h-screen text-slate-900">
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&family=Merriweather:wght@400;700&display=swap');
+                body { font-family: 'Plus Jakarta Sans', sans-serif; scroll-behavior: smooth; }
+                .report-font { font-family: 'Merriweather', serif; }
+                .nav-tab.active { background: #b91c1c; color: white; border-radius: 12px; }
+                .role-badge { transition: all 0.3s ease; cursor: pointer; border: 1px solid transparent; }
+                .role-active { border: 2px solid #b91c1c; background: #450a0a !important; }
+                .animate-fade { animation: fadeIn 0.3s ease-out; }
+                @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+                .vote-btn { transition: all 0.2s; position: relative; z-index: 1; }
+                .vote-btn:hover { transform: translateY(-5px); }
+                .vote-btn.selected { background: #fee2e2; border-color: #ef4444; border-radius: 1rem; padding: 4px; transform: scale(1.1); }
+                .img-zoom { transition: transform 0.3s ease; cursor: zoom-in; }
+                .img-zoom:hover { transform: scale(1.05); }
+                .modal-overlay { background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(8px); }
+                .step-active { color: #b91c1c; font-weight: 800; }
+                .step-done { color: #10b981; }
+            `}</style>
 
-            <!-- Role Selector -->
-            <div class="mb-10 p-2 bg-slate-900/50 rounded-2xl border border-white/5">
-                <p class="text-[9px] text-slate-500 font-black uppercase mb-3 ml-2 tracking-widest">Identitas Akses</p>
-                <div class="space-y-1">
-                    <div id="role-public" onclick="selectRole('public')" class="role-badge role-active flex items-center gap-3 p-3 rounded-xl hover:bg-white/5">
-                        <div class="w-2 h-2 rounded-full bg-cyan-400"></div>
-                        <span class="text-xs font-bold">Masyarakat</span>
-                    </div>
-                    <div id="role-admin" onclick="openAuthModal('admin')" class="role-badge flex items-center gap-3 p-3 rounded-xl hover:bg-white/5">
-                        <div class="w-2 h-2 rounded-full bg-red-500"></div>
-                        <span class="text-xs font-bold">Setjen DPR</span>
-                    </div>
-                    <div id="role-auditor" onclick="openAuthModal('auditor')" class="role-badge flex items-center gap-3 p-3 rounded-xl hover:bg-white/5">
-                        <div class="w-2 h-2 rounded-full bg-amber-400"></div>
-                        <span class="text-xs font-bold">BPK Auditor</span>
+            {/* MODAL: IMAGE / DOC PREVIEW */}
+            {imageModal.visible && (
+                <div className="fixed inset-0 z-[200] modal-overlay flex items-center justify-center p-4 animate-fade" onClick={() => setImageModal({ visible: false, src: '', caption: '' })}>
+                    <div className="relative max-w-4xl w-full flex flex-col items-center" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => setImageModal({ visible: false, src: '', caption: '' })} className="absolute -top-12 right-0 text-white text-4xl font-light">&times;</button>
+                        <img src={imageModal.src} alt={imageModal.caption} className="max-h-[85vh] w-auto rounded-2xl shadow-2xl border-4 border-white/10" />
+                        <p className="text-white mt-6 font-bold text-lg tracking-tight bg-black/40 px-6 py-2 rounded-full">{imageModal.caption}</p>
                     </div>
                 </div>
-            </div>
+            )}
 
-            <nav class="space-y-2 flex-grow">
-                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="nav-tab active w-full flex items-center gap-4 p-4 transition duration-300 font-bold text-sm">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
-                    <span>Dashboard Pengawasan</span>
-                </button>
-                <button onclick="switchTab('ledger')" id="tab-ledger" class="nav-tab w-full flex items-center gap-4 p-4 text-slate-400 hover:text-white transition duration-300 font-bold text-sm">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-                    <span>Audit Transaksi Visual</span>
-                </button>
-            </nav>
-        </aside>
+            {/* MODAL: FINAL REPORT (LHP) */}
+            {reportModal.visible && reportModal.tx && (
+                <div className="fixed inset-0 z-[150] modal-overlay flex items-center justify-center p-4 animate-fade" onClick={() => setReportModal({ visible: false, tx: null })}>
+                    <div className="bg-white max-w-3xl w-full h-[90vh] overflow-y-auto rounded-lg shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="sticky top-0 bg-slate-100 p-4 border-b flex justify-between items-center">
+                            <h3 className="font-bold text-slate-800">Preview Laporan Hasil Pemeriksaan (LHP)</h3>
+                            <button onClick={() => setReportModal({ visible: false, tx: null })} className="bg-red-100 text-red-600 px-4 py-1 rounded font-bold hover:bg-red-200">Tutup Dokumen</button>
+                        </div>
+                        <div className="p-12 report-font text-slate-800 bg-white">
+                            <div className="text-center mb-10 border-b-2 border-black pb-8">
+                                <img src="https://upload.wikimedia.org/wikipedia/commons/b/bb/Logo_BPK_RI.png" className="h-24 mx-auto mb-4" alt="BPK Logo" />
+                                <h1 className="text-xl font-bold uppercase tracking-widest">Badan Pemeriksa Keuangan</h1>
+                                <h2 className="text-lg uppercase tracking-widest mt-1">Republik Indonesia</h2>
+                                <h3 className="mt-8 font-bold text-xl underline">LAPORAN HASIL PEMERIKSAAN (LHP)</h3>
+                                <p className="mt-2 text-sm">Nomor: {reportModal.tx.id}/LHP/BPK/{new Date().getFullYear()}</p>
+                            </div>
+                            
+                            <div className="space-y-6 text-justify leading-relaxed">
+                                <p>Telah dilakukan pemeriksaan kepatuhan dan kewajaran atas laporan pertanggungjawaban keuangan untuk kegiatan <b>{reportModal.tx.kegiatan}</b> yang diajukan oleh <b>Sekretariat Komisi {reportModal.tx.komisi} DPR RI</b> dengan total anggaran sebesar <b>{formatIDR(reportModal.tx.total)}</b>.</p>
+                                
+                                <div>
+                                    <h4 className="font-bold mb-2">1. Ruang Lingkup Pemeriksaan</h4>
+                                    <p>Pemeriksaan meliputi pengujian bukti dokumen (nota transaksi), pemeriksaan fisik barang, serta evaluasi rasionalitas harga pasar atas item sebagai berikut:</p>
+                                    <ul className="list-disc pl-8 mt-2 space-y-1">
+                                        {reportModal.tx.rab.map((r, i) => (
+                                            <li key={i}>{r.item} ({r.qty} unit) senilai {formatIDR(r.sub)}</li>
+                                        ))}
+                                    </ul>
+                                </div>
 
-        <!-- Main Content -->
-        <main class="flex-grow p-6 lg:p-12 overflow-y-auto max-h-screen">
-            
-            <header class="mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-                <div>
-                    <h2 class="text-4xl font-extrabold text-slate-900 tracking-tighter">Monitoring <span class="text-red-600">Visual</span> Budget</h2>
-                    <p class="text-slate-500 mt-2 text-sm max-w-lg leading-relaxed">Verifikasi langsung lampiran nota dan bukti barang oleh publik dan auditor.</p>
-                </div>
-                <div id="status-display" class="bg-white border p-5 rounded-[2rem] shadow-sm flex items-center gap-4 min-w-[280px]">
-                    <div id="status-icon-circle" class="w-12 h-12 bg-cyan-50 text-cyan-600 rounded-2xl flex items-center justify-center">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                    </div>
-                    <div>
-                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Akses Saat Ini</p>
-                        <p id="status-label" class="text-sm font-extrabold text-slate-800">Masyarakat Umum</p>
-                    </div>
-                </div>
-            </header>
+                                <div>
+                                    <h4 className="font-bold mb-2">2. Hasil Temuan & Analisis</h4>
+                                    <p className="bg-slate-50 p-4 border-l-4 border-slate-800 italic">
+                                        "{reportModal.tx.audit.note || 'Tidak ada catatan spesifik dari auditor.'}"
+                                    </p>
+                                </div>
 
-            <!-- INPUT PANEL (DPR ONLY) -->
-            <section id="admin-panel" class="hidden-element mb-12 bg-white p-10 rounded-[3rem] shadow-xl border border-slate-100 animate-fade">
-                <div class="flex items-center gap-3 mb-8">
-                    <div class="w-3 h-3 bg-red-600 rounded-full animate-ping"></div>
-                    <h3 class="font-black text-slate-900 text-2xl tracking-tighter uppercase">Input Pengajuan Anggaran</h3>
-                </div>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                    <div class="space-y-2">
-                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nama Kegiatan</label>
-                        <input type="text" id="in-kegiatan" placeholder="Judul Kegiatan" class="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm font-semibold border-2 border-transparent focus:border-red-600 transition">
-                    </div>
-                    <div class="space-y-2">
-                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">No. Nota / Faktur</label>
-                        <input type="text" id="in-nota" placeholder="No. INV/..." class="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm font-semibold border-2 border-transparent">
-                    </div>
-                    <div class="space-y-2">
-                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Komisi</label>
-                        <select id="in-komisi" class="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm font-bold">
-                            <option>I</option><option>III</option><option>V</option><option>XI</option>
-                        </select>
-                    </div>
-                </div>
+                                <div>
+                                    <h4 className="font-bold mb-2">3. Kesimpulan & Opini Auditor</h4>
+                                    <p>Berdasarkan proses audit yang telah melalui tahap Entry Brief, Pemeriksaan Lapangan, dan Penyusunan Konsep Temuan, BPK menyimpulkan bahwa status anggaran ini adalah: 
+                                        <b className={`ml-2 uppercase px-2 py-1 rounded text-sm ${
+                                            reportModal.tx.audit.status === 'danger' ? 'bg-red-100 text-red-700' : 
+                                            reportModal.tx.audit.status === 'warning' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'
+                                        }`}>
+                                            {reportModal.tx.audit.status === 'verified' ? 'Wajar Tanpa Pengecualian' : 
+                                             reportModal.tx.audit.status === 'warning' ? 'Peringatan: Anggaran Gemuk' : 'Tidak Wajar: Indikasi Mark-Up'}
+                                        </b>
+                                    </p>
+                                </div>
+                            </div>
 
-                <div class="bg-slate-50 p-8 rounded-[2.5rem] mb-8 border border-slate-100">
-                    <div class="flex justify-between items-center mb-6">
-                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Daftar Belanja (RAB)</p>
-                        <button onclick="addRabRow()" class="px-4 py-2 bg-white rounded-xl text-[10px] font-black text-red-600 uppercase border border-red-100 hover:bg-red-50"> + Item Belanja</button>
-                    </div>
-                    <div id="rab-inputs" class="space-y-4"></div>
-                </div>
-
-                <button onclick="submitAnggaran()" class="w-full bg-slate-950 text-white font-black py-5 rounded-3xl hover:bg-red-600 transition shadow-2xl">KIRIM UNTUK AUDIT BPK</button>
-            </section>
-
-            <!-- DASHBOARD -->
-            <section id="content-dashboard" class="tab-content animate-fade">
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
-                    <div class="bg-white p-7 rounded-[2.5rem] border shadow-sm"><p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 text-center">Total Transaksi Terlapor</p><h3 id="stat-total" class="text-2xl font-black text-slate-900 text-center italic">Rp 0</h3></div>
-                    <div class="bg-white p-7 rounded-[2.5rem] border shadow-sm border-l-8 border-l-green-500"><p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Terverifikasi</p><h3 id="stat-verified" class="text-2xl font-black text-green-600">0</h3></div>
-                    <div class="bg-white p-7 rounded-[2.5rem] border shadow-sm border-l-8 border-l-orange-400"><p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Peringatan</p><h3 id="stat-warning" class="text-2xl font-black text-orange-500">0</h3></div>
-                    <div class="bg-white p-7 rounded-[2.5rem] border shadow-sm border-l-8 border-l-red-600"><p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Indikasi Mark-Up</p><h3 id="stat-danger" class="text-2xl font-black text-red-600">0</h3></div>
-                </div>
-
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-10">
-                    <div class="lg:col-span-2">
-                        <h4 class="font-black text-slate-900 text-xl uppercase tracking-tighter mb-8 flex items-center gap-3">Feed Transparansi</h4>
-                        <div id="audit-feed" class="space-y-5"></div>
-                    </div>
-                    <div class="bg-slate-900 p-8 rounded-[3rem] text-white shadow-2xl h-fit">
-                        <h4 class="font-black text-lg mb-4">Mekanisme Kontrol</h4>
-                        <p class="text-xs text-slate-400 leading-relaxed mb-6 italic">Gunakan hak suara anda jika menemukan ketidakwajaran dalam lampiran foto barang atau nota.</p>
-                        <div class="p-6 bg-white/5 rounded-3xl border border-white/10 text-center">
-                            <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-4">Total Partisipasi Publik</p>
-                            <div id="total-vote-count" class="text-4xl font-black text-cyan-400">0</div>
+                            <div className="mt-20 flex justify-end">
+                                <div className="text-center">
+                                    <p className="mb-20">Auditor Penanggung Jawab,</p>
+                                    <p className="font-bold underline">Tim Auditor TABLIK BPK</p>
+                                    <p className="text-sm">NIP. 1980XXXXXXXXXXXXX</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </section>
+            )}
 
-            <!-- LEDGER / AUDIT VISUAL -->
-            <section id="content-ledger" class="tab-content hidden animate-fade">
-                <div id="ledger-container" class="space-y-12 pb-20"></div>
-            </section>
-
-        </main>
-    </div>
-
-    <!-- Toast -->
-    <div id="toast" class="fixed bottom-10 right-10 p-6 rounded-[2rem] shadow-2xl z-[300] hidden animate-fade text-white font-bold text-sm"></div>
-
-    <script>
-        let currentRole = 'public';
-        let userVotes = {}; // Format: { transactionId: voteType }
-        
-        let transactions = [
-            {
-                id: "TBL-101", komisi: "XI", kegiatan: "Pengadaan Laptop Sekretariat", tanggal: "2024-05-18",
-                notaNum: "INV-990-JKT", total: 45000000, status: "verified",
-                auditNote: "Barang telah dicek fisik dan spesifikasi sesuai dengan nota terlampir.",
-                rab: [
-                    { item: "MacBook Air M2", qty: 2, price: 22500000, sub: 45000000, imgNota: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=400", imgProduk: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&q=80&w=400" }
-                ],
-                votes: { 'v-sekali': 8, 'v-puas': 12, 'v-netral': 3, 'v-kurang': 1, 'v-tidak': 0 }
-            }
-        ];
-
-        // --- CORE FUNCTIONS ---
-        function selectRole(role) {
-            currentRole = role;
-            document.querySelectorAll('.role-badge').forEach(b => b.classList.remove('role-active'));
-            document.getElementById(`role-${role}`).classList.add('role-active');
-            document.getElementById('admin-panel').classList.toggle('hidden-element', role !== 'admin');
-            
-            const label = document.getElementById('status-label');
-            if(role === 'admin') label.innerText = "Setjen DPR";
-            else if(role === 'auditor') label.innerText = "BPK Auditor";
-            else label.innerText = "Masyarakat Umum";
-            
-            renderAll();
-        }
-
-        function openAuthModal(role) {
-            if(currentRole === role) return;
-            window.pendingRole = role;
-            document.getElementById('auth-modal').classList.remove('hidden');
-        }
-
-        function closeAuthModal() { document.getElementById('auth-modal').classList.add('hidden'); }
-
-        function verifyAccess() {
-            const code = document.getElementById('auth-code').value;
-            if((window.pendingRole === 'admin' && code === '1234') || (window.pendingRole === 'auditor' && code === '5678')) {
-                selectRole(window.pendingRole);
-                closeAuthModal();
-                showToast("Akses Terverifikasi");
-            } else { showToast("Kode Akses Salah", true); }
-        }
-
-        function addRabRow() {
-            const id = 'rab-' + Date.now();
-            const div = document.createElement('div');
-            div.id = id;
-            div.className = "p-6 bg-white rounded-3xl border border-slate-100 animate-fade space-y-4";
-            div.innerHTML = `
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <input type="text" placeholder="Item (Contoh: Kertas A4)" class="p-3 bg-slate-50 rounded-xl text-xs font-semibold name">
-                    <input type="number" placeholder="Volume" class="p-3 bg-slate-50 rounded-xl text-xs font-semibold qty">
-                    <input type="number" placeholder="Harga Satuan" class="p-3 bg-slate-50 rounded-xl text-xs font-semibold price">
-                    <button onclick="document.getElementById('${id}').remove()" class="text-[10px] font-black text-red-500 uppercase tracking-widest hover:underline">Hapus</button>
-                </div>
-                <div class="grid grid-cols-2 gap-4 pt-2">
-                    <div class="flex items-center gap-3">
-                        <label class="text-[9px] font-black text-slate-400 uppercase">Nota (PDF/IMG)</label>
-                        <input type="file" onchange="handleFile(this, '${id}', 'nota')" class="hidden" id="file-nota-${id}">
-                        <button onclick="document.getElementById('file-nota-${id}').click()" class="px-3 py-1.5 border rounded-lg text-[9px] font-bold">Pilih Nota</button>
-                        <img id="prev-nota-${id}" class="w-12 h-12 object-cover rounded-lg hidden border">
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <label class="text-[9px] font-black text-slate-400 uppercase">Foto Barang</label>
-                        <input type="file" onchange="handleFile(this, '${id}', 'prod')" class="hidden" id="file-prod-${id}">
-                        <button onclick="document.getElementById('file-prod-${id}').click()" class="px-3 py-1.5 border rounded-lg text-[9px] font-bold">Pilih Barang</button>
-                        <img id="prev-prod-${id}" class="w-12 h-12 object-cover rounded-lg hidden border">
-                    </div>
-                </div>
-            `;
-            document.getElementById('rab-inputs').appendChild(div);
-        }
-
-        function handleFile(input, rowId, type) {
-            const file = input.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    const img = document.getElementById(`prev-${type}-${rowId}`);
-                    img.src = e.target.result;
-                    img.classList.remove('hidden');
-                };
-                reader.readAsDataURL(file);
-            }
-        }
-
-        function submitAnggaran() {
-            const k = document.getElementById('in-kegiatan').value;
-            if(!k) return showToast("Judul kegiatan wajib diisi", true);
-
-            const rows = document.querySelectorAll('#rab-inputs > div');
-            let total = 0;
-            const rab = [];
-            rows.forEach(r => {
-                const name = r.querySelector('.name').value;
-                const qty = parseFloat(r.querySelector('.qty').value) || 0;
-                const price = parseFloat(r.querySelector('.price').value) || 0;
-                const imgNota = r.querySelector(`[id^="prev-nota"]`).src || null;
-                const imgProduk = r.querySelector(`[id^="prev-prod"]`).src || null;
-
-                if(name && qty*price > 0) {
-                    rab.push({ item: name, qty, price, sub: qty*price, imgNota, imgProduk });
-                    total += qty*price;
-                }
-            });
-
-            transactions.unshift({
-                id: "TBL-" + Math.floor(Math.random()*900 + 100),
-                komisi: document.getElementById('in-komisi').value,
-                kegiatan: k,
-                tanggal: new Date().toLocaleDateString('id-ID'),
-                total, status: 'pending', auditNote: '',
-                notaNum: document.getElementById('in-nota').value || 'TBA',
-                rab,
-                votes: { 'v-sekali': 0, 'v-puas': 0, 'v-netral': 0, 'v-kurang': 0, 'v-tidak': 0 }
-            });
-            renderAll();
-            showToast("Berhasil diajukan!");
-            document.getElementById('in-kegiatan').value = '';
-            document.getElementById('rab-inputs').innerHTML = '';
-            addRabRow();
-        }
-
-        // --- VOTING LOGIC ---
-        function castVote(txId, type) {
-            const tx = transactions.find(t => t.id === txId);
-            if(!tx) return;
-
-            // Jika sudah ada vote sebelumnya untuk txId ini
-            if (userVotes[txId]) {
-                const oldType = userVotes[txId];
-                
-                // Jika klik tombol yang sama -> CANCEL VOTE
-                if (oldType === type) {
-                    tx.votes[oldType]--;
-                    delete userVotes[txId];
-                    showToast("Suara Anda telah ditarik kembali");
-                } 
-                // Jika klik tombol berbeda -> PINDAH VOTE
-                else {
-                    tx.votes[oldType]--;
-                    tx.votes[type]++;
-                    userVotes[txId] = type;
-                    showToast("Pilihan Anda telah diubah");
-                }
-            } 
-            // Jika vote baru
-            else {
-                tx.votes[type]++;
-                userVotes[txId] = type;
-                showToast("Terima kasih atas suaranya!");
-            }
-            renderAll();
-        }
-
-        // --- IMAGE MODAL ---
-        function openImageModal(src, caption) {
-            if(!src || src.includes('undefined')) return;
-            document.getElementById('modal-img-target').src = src;
-            document.getElementById('modal-img-caption').innerText = caption;
-            document.getElementById('image-modal').classList.remove('hidden');
-        }
-
-        function closeImageModal() { document.getElementById('image-modal').classList.add('hidden'); }
-
-        // --- AUDIT ACTIONS ---
-        function openAuditModal(id) {
-            const tx = transactions.find(t => t.id === id);
-            document.getElementById('pending-audit-id').value = id;
-            document.getElementById('audit-category').value = tx.status === 'pending' ? 'verified' : tx.status;
-            document.getElementById('audit-comment').value = tx.auditNote || '';
-            document.getElementById('audit-note-modal').classList.remove('hidden');
-        }
-
-        function closeAuditModal() { document.getElementById('audit-note-modal').classList.add('hidden'); }
-
-        function saveAuditResult() {
-            const id = document.getElementById('pending-audit-id').value;
-            const tx = transactions.find(t => t.id === id);
-            if(tx) {
-                tx.status = document.getElementById('audit-category').value;
-                tx.auditNote = document.getElementById('audit-comment').value;
-            }
-            closeAuditModal();
-            renderAll();
-            showToast("Hasil Audit BPK Telah Disimpan");
-        }
-
-        function deleteAudit(id) {
-            const tx = transactions.find(t => t.id === id);
-            if(tx) {
-                tx.status = 'pending';
-                tx.auditNote = '';
-            }
-            renderAll();
-            showToast("Audit Dihapus oleh BPK");
-        }
-
-        // --- VIEW ---
-        function formatIDR(num) { return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num); }
-
-        function switchTab(tab) {
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
-            document.getElementById('content-' + tab).classList.remove('hidden');
-            document.querySelectorAll('.nav-tab').forEach(n => n.classList.remove('active'));
-            document.getElementById('tab-' + tab).classList.add('active');
-        }
-
-        function showToast(msg, isError = false) {
-            const t = document.getElementById('toast');
-            t.innerText = msg;
-            t.className = `fixed bottom-10 right-10 p-6 rounded-[2rem] shadow-2xl z-[300] animate-fade font-bold text-sm text-white ${isError ? 'bg-red-600' : 'bg-[#0f172a]'}`;
-            t.classList.remove('hidden');
-            setTimeout(() => t.classList.add('hidden'), 3000);
-        }
-
-        function renderAll() {
-            const totalVal = transactions.reduce((a, b) => a + b.total, 0);
-            document.getElementById('stat-total').innerText = formatIDR(totalVal);
-            document.getElementById('stat-verified').innerText = transactions.filter(t => t.status === 'verified').length;
-            document.getElementById('stat-warning').innerText = transactions.filter(t => t.status === 'warning').length;
-            document.getElementById('stat-danger').innerText = transactions.filter(t => t.status === 'danger').length;
-
-            let totalPartisipasi = 0;
-            transactions.forEach(t => {
-                Object.values(t.votes).forEach(v => totalPartisipasi += v);
-            });
-            document.getElementById('total-vote-count').innerText = totalPartisipasi;
-
-            const feed = document.getElementById('audit-feed');
-            feed.innerHTML = transactions.map(t => `
-                <div class="bg-white p-5 rounded-3xl border flex items-center justify-between border-l-4 
-                    ${t.status === 'danger' ? 'border-l-red-600' : t.status === 'warning' ? 'border-l-orange-400' : t.status === 'verified' ? 'border-l-green-500' : 'border-l-slate-200'}">
-                    <div class="flex items-center gap-4">
-                        <div class="p-3 bg-slate-50 rounded-2xl">
-                            <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+            {/* MODAL: AUTHENTICATION */}
+            {authModal.visible && (
+                <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[100] flex items-center justify-center animate-fade">
+                    <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl w-full max-w-md text-center border border-slate-100">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/b/bb/Logo_BPK_RI.png" className="h-20 mx-auto mb-6" alt="BPK Logo" />
+                        <h3 className="text-2xl font-extrabold text-slate-900 mb-2">Otentikasi Petugas</h3>
+                        <p className="text-sm text-slate-500 mb-8">Gunakan Kode Akses Unit Anda</p>
+                        <input 
+                            type="password" placeholder="••••" value={authModal.code} 
+                            onChange={e => setAuthModal({...authModal, code: e.target.value})}
+                            className="w-full p-5 bg-slate-50 rounded-2xl border-2 border-slate-100 text-center text-3xl tracking-[0.6em] outline-none focus:border-red-600 transition-all mb-8" 
+                        />
+                        <div className="flex gap-4">
+                            <button onClick={() => setAuthModal({ visible: false, pendingRole: '', code: '' })} className="flex-1 py-4 font-bold text-slate-400 hover:text-slate-600 transition">Batal</button>
+                            <button onClick={verifyAccess} className="flex-1 bg-red-600 text-white font-bold py-4 rounded-2xl shadow-lg hover:bg-red-700 transition">Verifikasi</button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL: AUDIT BPK WORKFLOW */}
+            {auditModal.visible && (
+                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[110] flex items-center justify-center animate-fade">
+                    <div className="bg-white p-8 rounded-[3rem] shadow-2xl w-full max-w-xl border-t-8 border-red-600 max-h-[90vh] overflow-y-auto">
+                        <div className="flex items-center gap-4 mb-6">
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/b/bb/Logo_BPK_RI.png" className="h-12" alt="BPK Logo" />
+                            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Birokrasi Audit BPK</h3>
+                        </div>
+                        <div className="space-y-6">
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fase Audit Saat Ini</label>
+                                <select 
+                                    value={auditModal.phase}
+                                    onChange={(e) => setAuditModal({...auditModal, phase: e.target.value})}
+                                    className="w-full p-4 bg-slate-50 rounded-2xl outline-none mt-2 border border-slate-100 font-bold text-sm text-red-700"
+                                >
+                                    <option value="1">Tahap 1: Entry Briefing</option>
+                                    <option value="2">Tahap 2: Pemeriksaan Lapangan</option>
+                                    <option value="3">Tahap 3: Konsep Temuan (KTPP)</option>
+                                    <option value="4">Tahap 4: LHP & Tindak Lanjut</option>
+                                </select>
+                            </div>
+
+                            {/* Dokumen Upload logic based on phase */}
+                            {(auditModal.phase == 1 || auditModal.phase == 4) && (
+                                <div className="p-4 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">
+                                        Upload Dokumen {auditModal.phase == 1 ? 'Surat Entry Brief' : 'LHP Final'} (Format Image/PDF Sim)
+                                    </label>
+                                    <input type="file" onChange={(e) => handleFile(e, null, 'audit')} className="text-sm w-full" />
+                                    {auditModal.doc && <span className="text-xs text-green-600 font-bold mt-2 block">Dokumen berhasil dipilih.</span>}
+                                </div>
+                            )}
+
+                            {(auditModal.phase == 3 || auditModal.phase == 4) && (
+                                <>
+                                    <div>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Status Konsep Temuan</label>
+                                        <select 
+                                            value={auditModal.category}
+                                            onChange={(e) => setAuditModal({...auditModal, category: e.target.value})}
+                                            className="w-full p-4 bg-slate-50 rounded-2xl outline-none mt-2 border border-slate-100 font-semibold text-sm"
+                                        >
+                                            <option value="verified">Wajar Tanpa Pengecualian (Clear)</option>
+                                            <option value="warning">Peringatan: Anggaran Terlalu Gemuk</option>
+                                            <option value="danger">Bahaya: Indikasi Mark-Up / Tidak Wajar</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Deskripsi Temuan / Analisis</label>
+                                        <textarea 
+                                            rows="4" placeholder="Jelaskan temuan secara faktual..." 
+                                            value={auditModal.comment} onChange={(e) => setAuditModal({...auditModal, comment: e.target.value})}
+                                            className="w-full p-4 bg-slate-50 rounded-2xl outline-none mt-2 text-sm border border-slate-100"
+                                        ></textarea>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                        <div className="flex gap-4 mt-8">
+                            <button onClick={() => setAuditModal({ visible: false })} className="flex-1 py-4 font-bold text-slate-400 bg-slate-100 rounded-2xl">Batal</button>
+                            <button onClick={saveAuditResult} className="flex-1 bg-red-600 text-white font-bold py-4 rounded-2xl shadow-xl hover:bg-red-700 transition">Simpan Progres</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className="flex flex-col lg:flex-row min-h-screen">
+                {/* SIDEBAR */}
+                <aside className="w-full lg:w-80 bg-[#0f172a] text-white p-8 flex flex-col shadow-2xl z-50">
+                    <div className="flex flex-col items-center mb-10 text-center">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/b/bb/Logo_BPK_RI.png" className="h-20 mb-4" alt="Logo BPK RI" />
+                        <h1 className="text-2xl font-black tracking-tighter italic">TABLIK<span className="text-red-500">DPR</span></h1>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1">Transparansi Visual x Audit</p>
+                    </div>
+
+                    <div className="mb-10 p-2 bg-slate-900/50 rounded-2xl border border-white/5">
+                        <p className="text-[9px] text-slate-500 font-black uppercase mb-3 ml-2 tracking-widest">Identitas Akses</p>
+                        <div className="space-y-1">
+                            <div onClick={() => selectRole('public')} className={`role-badge flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 ${currentRole === 'public' ? 'role-active' : ''}`}>
+                                <div className="w-2 h-2 rounded-full bg-cyan-400"></div>
+                                <span className="text-xs font-bold">Masyarakat Umum</span>
+                            </div>
+                            <div onClick={() => openAuthModal('admin')} className={`role-badge flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 ${currentRole === 'admin' ? 'role-active' : ''}`}>
+                                <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                                <span className="text-xs font-bold">Setjen DPR</span>
+                            </div>
+                            <div onClick={() => openAuthModal('auditor')} className={`role-badge flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 ${currentRole === 'auditor' ? 'role-active' : ''}`}>
+                                <div className="w-2 h-2 rounded-full bg-amber-400"></div>
+                                <span className="text-xs font-bold">BPK Auditor</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <nav className="space-y-2 flex-grow">
+                        <button onClick={() => setActiveTab('dashboard')} className={`nav-tab w-full flex items-center gap-4 p-4 transition duration-300 font-bold text-sm ${activeTab === 'dashboard' ? 'active' : 'text-slate-400 hover:text-white'}`}>
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+                            <span>Dashboard Pengawasan</span>
+                        </button>
+                        <button onClick={() => setActiveTab('ledger')} className={`nav-tab w-full flex items-center gap-4 p-4 transition duration-300 font-bold text-sm ${activeTab === 'ledger' ? 'active' : 'text-slate-400 hover:text-white'}`}>
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                            <span>Birokrasi Audit & Dokumen</span>
+                        </button>
+                    </nav>
+                </aside>
+
+                {/* MAIN CONTENT */}
+                <main className="flex-grow p-6 lg:p-12 overflow-y-auto max-h-screen">
+                    <header className="mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                         <div>
-                            <p class="text-xs font-black text-slate-900">${t.kegiatan}</p>
-                            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">${formatIDR(t.total)}</p>
+                            <h2 className="text-4xl font-extrabold text-slate-900 tracking-tighter">Monitoring <span className="text-red-600">Faktual</span> Budget</h2>
+                            <p className="text-slate-500 mt-2 text-sm max-w-lg leading-relaxed">Verifikasi dokumen pemeriksaan BPK secara berjenjang dan transparan.</p>
                         </div>
-                    </div>
-                    <span class="text-[8px] font-black uppercase px-3 py-1.5 rounded-full ${t.status === 'danger' ? 'bg-red-50 text-red-600' : t.status === 'warning' ? 'bg-orange-50 text-orange-600' : t.status === 'verified' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}">
-                        ${t.status}
-                    </span>
-                </div>
-            `).join('');
-
-            const ledger = document.getElementById('ledger-container');
-            ledger.innerHTML = transactions.map(t => {
-                const userVote = userVotes[t.id];
-                return `
-                <div class="bg-white rounded-[3rem] border shadow-sm overflow-hidden animate-fade">
-                    <div class="p-8 bg-slate-50/50 border-b flex flex-col md:flex-row justify-between items-center gap-6">
-                        <div class="flex items-center gap-4">
-                            <div class="w-16 h-16 bg-white border rounded-2xl flex items-center justify-center p-3">
-                                <img src="https://upload.wikimedia.org/wikipedia/commons/b/bb/Logo_BPK_RI.png" alt="BPK">
+                        <div className="bg-white border p-5 rounded-[2rem] shadow-sm flex items-center gap-4 min-w-[280px]">
+                            <div className="w-12 h-12 bg-cyan-50 text-cyan-600 rounded-2xl flex items-center justify-center">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                             </div>
                             <div>
-                                <h4 class="text-xl font-extrabold text-slate-900 tracking-tight">${t.kegiatan}</h4>
-                                <p class="text-[9px] text-slate-400 font-bold uppercase mt-1 tracking-widest">Nota: ${t.notaNum} • Komisi ${t.komisi}</p>
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Akses Saat Ini</p>
+                                <p className="text-sm font-extrabold text-slate-800">{getRoleLabel()}</p>
                             </div>
                         </div>
-                        <div class="text-center md:text-right">
-                            <p class="text-3xl font-black text-slate-900 tracking-tighter">${formatIDR(t.total)}</p>
-                        </div>
-                    </div>
+                    </header>
 
-                    <div class="p-8 grid grid-cols-1 lg:grid-cols-2 gap-10">
-                        <div>
-                            <p class="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-4">Lampiran Detail (Klik untuk Preview)</p>
-                            <div class="space-y-4">
-                                ${t.rab.map(r => `
-                                    <div class="p-5 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                                        <div class="flex justify-between items-center mb-4">
-                                            <span class="text-xs font-bold text-slate-800">${r.item} <span class="text-slate-400 ml-1">x${r.qty}</span></span>
-                                            <span class="text-xs font-black text-slate-900">${formatIDR(r.sub)}</span>
-                                        </div>
-                                        <div class="flex gap-4">
-                                            ${r.imgNota ? `
-                                                <div class="flex-1">
-                                                    <p class="text-[8px] font-bold text-slate-400 uppercase mb-1">Nota Transaksi</p>
-                                                    <img src="${r.imgNota}" onclick="openImageModal('${r.imgNota}', 'Nota: ${r.item}')" class="w-full h-24 object-cover rounded-xl border-2 border-slate-50 img-zoom">
+                    {/* INPUT PANEL (DPR ONLY) */}
+                    {currentRole === 'admin' && (
+                        <section className="mb-12 bg-white p-10 rounded-[3rem] shadow-xl border border-slate-100 animate-fade">
+                            <div className="flex items-center gap-3 mb-8">
+                                <div className="w-3 h-3 bg-red-600 rounded-full animate-ping"></div>
+                                <h3 className="font-black text-slate-900 text-2xl tracking-tighter uppercase">Input Pengajuan Anggaran (DPR)</h3>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nama Kegiatan</label>
+                                    <input type="text" value={formKegiatan} onChange={e => setFormKegiatan(e.target.value)} placeholder="Judul Kegiatan" className="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm font-semibold border-2 border-transparent focus:border-red-600 transition" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">No. Nota / Faktur</label>
+                                    <input type="text" value={formNota} onChange={e => setFormNota(e.target.value)} placeholder="No. INV/..." className="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm font-semibold border-2 border-transparent" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Komisi</label>
+                                    <select value={formKomisi} onChange={e => setFormKomisi(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm font-bold">
+                                        <option>I</option><option>III</option><option>V</option><option>XI</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="bg-slate-50 p-8 rounded-[2.5rem] mb-8 border border-slate-100">
+                                <div className="flex justify-between items-center mb-6">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Daftar Belanja (RAB)</p>
+                                    <button onClick={addRabRow} className="px-4 py-2 bg-white rounded-xl text-[10px] font-black text-red-600 uppercase border border-red-100 hover:bg-red-50"> + Item Belanja</button>
+                                </div>
+                                <div className="space-y-4">
+                                    {rabInputs.map(r => (
+                                        <div key={r.id} className="p-6 bg-white rounded-3xl border border-slate-100 animate-fade space-y-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                                <input type="text" placeholder="Item (Contoh: Kertas A4)" value={r.item} onChange={e => updateRabRow(r.id, 'item', e.target.value)} className="p-3 bg-slate-50 rounded-xl text-xs font-semibold" />
+                                                <input type="number" placeholder="Volume" value={r.qty} onChange={e => updateRabRow(r.id, 'qty', e.target.value)} className="p-3 bg-slate-50 rounded-xl text-xs font-semibold" />
+                                                <input type="number" placeholder="Harga Satuan" value={r.price} onChange={e => updateRabRow(r.id, 'price', e.target.value)} className="p-3 bg-slate-50 rounded-xl text-xs font-semibold" />
+                                                <button onClick={() => removeRabRow(r.id)} className="text-[10px] font-black text-red-500 uppercase tracking-widest hover:underline">Hapus</button>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-4 pt-2">
+                                                <div className="flex items-center gap-3">
+                                                    <label className="text-[9px] font-black text-slate-400 uppercase">Nota Transaksi</label>
+                                                    <label className="px-3 py-1.5 border rounded-lg text-[9px] font-bold cursor-pointer hover:bg-slate-50">
+                                                        Upload Bukti
+                                                        <input type="file" onChange={(e) => handleFile(e, r.id, 'nota')} className="hidden" />
+                                                    </label>
+                                                    {r.imgNota && <img src={r.imgNota} alt="Preview" className="w-12 h-12 object-cover rounded-lg border" />}
                                                 </div>
-                                            ` : ''}
-                                            ${r.imgProduk ? `
-                                                <div class="flex-1">
-                                                    <p class="text-[8px] font-bold text-slate-400 uppercase mb-1">Bukti Barang</p>
-                                                    <img src="${r.imgProduk}" onclick="openImageModal('${r.imgProduk}', 'Produk: ${r.item}')" class="w-full h-24 object-cover rounded-xl border-2 border-slate-50 img-zoom">
+                                                <div className="flex items-center gap-3">
+                                                    <label className="text-[9px] font-black text-slate-400 uppercase">Foto Barang</label>
+                                                    <label className="px-3 py-1.5 border rounded-lg text-[9px] font-bold cursor-pointer hover:bg-slate-50">
+                                                        Upload Bukti
+                                                        <input type="file" onChange={(e) => handleFile(e, r.id, 'produk')} className="hidden" />
+                                                    </label>
+                                                    {r.imgProduk && <img src={r.imgProduk} alt="Preview" className="w-12 h-12 object-cover rounded-lg border" />}
                                                 </div>
-                                            ` : ''}
+                                            </div>
                                         </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <button onClick={submitAnggaran} className="w-full bg-slate-950 text-white font-black py-5 rounded-3xl hover:bg-red-600 transition shadow-2xl">AJUKAN KE SISTEM</button>
+                        </section>
+                    )}
+
+                    {/* VIEW: DASHBOARD */}
+                    {activeTab === 'dashboard' && (
+                        <section className="animate-fade">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
+                                <div className="bg-white p-7 rounded-[2.5rem] border shadow-sm"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 text-center">Total Pengajuan</p><h3 className="text-2xl font-black text-slate-900 text-center italic">{formatIDR(totalVal)}</h3></div>
+                                <div className="bg-white p-7 rounded-[2.5rem] border shadow-sm border-l-8 border-l-green-500"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Wajar</p><h3 className="text-2xl font-black text-green-600">{countVerified}</h3></div>
+                                <div className="bg-white p-7 rounded-[2.5rem] border shadow-sm border-l-8 border-l-orange-400"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Peringatan</p><h3 className="text-2xl font-black text-orange-500">{countWarning}</h3></div>
+                                <div className="bg-white p-7 rounded-[2.5rem] border shadow-sm border-l-8 border-l-red-600"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Indikasi Mark-Up</p><h3 className="text-2xl font-black text-red-600">{countDanger}</h3></div>
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                                <div className="lg:col-span-2">
+                                    <h4 className="font-black text-slate-900 text-xl uppercase tracking-tighter mb-8 flex items-center gap-3">Feed Transparansi & Status BPK</h4>
+                                    <div className="space-y-5">
+                                        {transactions.map(t => (
+                                            <div key={t.id} className={`bg-white p-5 rounded-3xl border flex items-center justify-between border-l-4 ${
+                                                t.audit.status === 'danger' ? 'border-l-red-600' : 
+                                                t.audit.status === 'warning' ? 'border-l-orange-400' : 
+                                                t.audit.phase > 0 && t.audit.status === 'verified' ? 'border-l-green-500' : 'border-l-slate-200'
+                                            }`}>
+                                                <div className="flex items-center gap-4">
+                                                    <div className="p-3 bg-slate-50 rounded-2xl">
+                                                        <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-black text-slate-900">{t.kegiatan}</p>
+                                                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{getPhaseLabel(t.audit.phase)}</p>
+                                                    </div>
+                                                </div>
+                                                <span className={`text-[8px] font-black uppercase px-3 py-1.5 rounded-full ${
+                                                    t.audit.status === 'danger' ? 'bg-red-50 text-red-600' : 
+                                                    t.audit.status === 'warning' ? 'bg-orange-50 text-orange-600' : 
+                                                    t.audit.phase > 0 && t.audit.status === 'verified' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'
+                                                }`}>
+                                                    {t.audit.phase === 0 ? 'Menunggu Audit' : t.audit.status}
+                                                </span>
+                                            </div>
+                                        ))}
                                     </div>
-                                `).join('')}
+                                </div>
+                                <div className="bg-slate-900 p-8 rounded-[3rem] text-white shadow-2xl h-fit">
+                                    <h4 className="font-black text-lg mb-4">Mekanisme Kontrol</h4>
+                                    <p className="text-xs text-slate-400 leading-relaxed mb-6 italic">Gunakan hak suara anda jika menemukan ketidakwajaran dalam lampiran foto barang atau nota.</p>
+                                    <div className="p-6 bg-white/5 rounded-3xl border border-white/10 text-center">
+                                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-4">Total Partisipasi Publik</p>
+                                        <div className="text-4xl font-black text-cyan-400">{totalPartisipasi}</div>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
+                        </section>
+                    )}
 
-                        <div class="space-y-6">
-                            <div class="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-100">
-                                <div class="flex justify-between items-start mb-4">
-                                    <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest">Catatan Auditor BPK</p>
-                                    ${currentRole === 'auditor' && t.auditNote ? `
-                                        <div class="flex gap-2">
-                                            <button onclick="openAuditModal('${t.id}')" class="text-[8px] font-black text-blue-600 uppercase underline">Edit</button>
-                                            <button onclick="deleteAudit('${t.id}')" class="text-[8px] font-black text-red-600 uppercase underline">Hapus</button>
+                    {/* VIEW: LEDGER / VISUAL AUDIT */}
+                    {activeTab === 'ledger' && (
+                        <section className="animate-fade">
+                            <div className="space-y-12 pb-20">
+                                {transactions.map(t => {
+                                    const userVote = userVotes[t.id];
+                                    return (
+                                        <div key={t.id} className="bg-white rounded-[3rem] border shadow-sm overflow-hidden animate-fade">
+                                            {/* HEADER RAB */}
+                                            <div className="p-8 bg-slate-50/50 border-b flex flex-col md:flex-row justify-between items-center gap-6">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-16 h-16 bg-white border rounded-2xl flex items-center justify-center p-3">
+                                                        <img src="https://upload.wikimedia.org/wikipedia/commons/b/bb/Logo_BPK_RI.png" alt="BPK" />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-xl font-extrabold text-slate-900 tracking-tight">{t.kegiatan}</h4>
+                                                        <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 tracking-widest">Komisi {t.komisi} • ID: {t.id}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="text-center md:text-right flex flex-col items-end">
+                                                    <p className="text-3xl font-black text-slate-900 tracking-tighter">{formatIDR(t.total)}</p>
+                                                    {currentRole === 'auditor' && (
+                                                        <button onClick={() => openAuditModal(t.id)} className="mt-2 bg-red-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-red-700 shadow-md">
+                                                            {t.audit.phase === 0 ? 'Mulai Audit (Entry Brief)' : 'Update Fase Audit'}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* STEPPER BIROKRASI BPK */}
+                                            <div className="p-6 border-b border-slate-100 flex flex-wrap justify-center md:justify-between items-center gap-4 text-[10px] font-bold uppercase tracking-widest bg-slate-50">
+                                                <div className={`flex items-center gap-2 ${t.audit.phase >= 1 ? 'step-done' : 'text-slate-300'}`}>
+                                                    <div className="w-5 h-5 rounded-full border-2 border-current flex items-center justify-center">1</div>
+                                                    <span>Entry Brief</span>
+                                                </div>
+                                                <span className="text-slate-300 hidden md:block">→</span>
+                                                <div className={`flex items-center gap-2 ${t.audit.phase >= 2 ? 'step-done' : 'text-slate-300'} ${t.audit.phase === 2 ? 'step-active' : ''}`}>
+                                                    <div className="w-5 h-5 rounded-full border-2 border-current flex items-center justify-center">2</div>
+                                                    <span>Cek Lapang</span>
+                                                </div>
+                                                <span className="text-slate-300 hidden md:block">→</span>
+                                                <div className={`flex items-center gap-2 ${t.audit.phase >= 3 ? 'step-done' : 'text-slate-300'} ${t.audit.phase === 3 ? 'step-active' : ''}`}>
+                                                    <div className="w-5 h-5 rounded-full border-2 border-current flex items-center justify-center">3</div>
+                                                    <span>KTPP</span>
+                                                </div>
+                                                <span className="text-slate-300 hidden md:block">→</span>
+                                                <div className={`flex items-center gap-2 ${t.audit.phase === 4 ? 'step-done' : 'text-slate-300'}`}>
+                                                    <div className="w-5 h-5 rounded-full border-2 border-current flex items-center justify-center">4</div>
+                                                    <span>LHP & T.Lanjut</span>
+                                                </div>
+                                            </div>
+
+                                            <div className="p-8 grid grid-cols-1 lg:grid-cols-2 gap-10">
+                                                {/* RAB DETAILS & DOC PREVIEWS */}
+                                                <div>
+                                                    <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-4">Lampiran Rincian Bukti</p>
+                                                    <div className="space-y-4">
+                                                        {t.rab.map((r, i) => (
+                                                            <div key={i} className="p-5 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                                                                <div className="flex justify-between items-center mb-4">
+                                                                    <span className="text-xs font-bold text-slate-800">{r.item} <span className="text-slate-400 ml-1">x{r.qty}</span></span>
+                                                                    <span className="text-xs font-black text-slate-900">{formatIDR(r.sub)}</span>
+                                                                </div>
+                                                                <div className="flex gap-4">
+                                                                    {r.imgNota && (
+                                                                        <div className="flex-1">
+                                                                            <p className="text-[8px] font-bold text-slate-400 uppercase mb-1">Nota Transaksi</p>
+                                                                            <img src={r.imgNota} onClick={() => setImageModal({ visible: true, src: r.imgNota, caption: `Nota: ${r.item}` })} className="w-full h-24 object-cover rounded-xl border-2 border-slate-50 img-zoom" alt="Nota" />
+                                                                        </div>
+                                                                    )}
+                                                                    {r.imgProduk && (
+                                                                        <div className="flex-1">
+                                                                            <p className="text-[8px] font-bold text-slate-400 uppercase mb-1">Bukti Barang</p>
+                                                                            <img src={r.imgProduk} onClick={() => setImageModal({ visible: true, src: r.imgProduk, caption: `Produk: ${r.item}` })} className="w-full h-24 object-cover rounded-xl border-2 border-slate-50 img-zoom" alt="Produk" />
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+
+                                                    {/* Surat & Dokumen BPK Section */}
+                                                    {(t.audit.docEntryBrief || t.audit.docLHP) && (
+                                                        <div className="mt-6 p-5 bg-blue-50 border border-blue-100 rounded-2xl">
+                                                            <p className="text-[10px] font-black text-blue-900 uppercase tracking-widest mb-3">Dokumen Resmi BPK (Preview)</p>
+                                                            <div className="flex gap-3">
+                                                                {t.audit.docEntryBrief && (
+                                                                    <button onClick={() => setImageModal({visible: true, src: t.audit.docEntryBrief, caption: 'Surat Tugas Entry Briefing BPK'})} className="px-4 py-2 bg-white text-blue-700 text-xs font-bold rounded-lg border border-blue-200 hover:bg-blue-100">
+                                                                        📄 Surat Entry Brief
+                                                                    </button>
+                                                                )}
+                                                                {t.audit.docLHP && (
+                                                                    <button onClick={() => setImageModal({visible: true, src: t.audit.docLHP, caption: 'Dokumen LHP (Laporan Hasil Pemeriksaan)'})} className="px-4 py-2 bg-white text-blue-700 text-xs font-bold rounded-lg border border-blue-200 hover:bg-blue-100">
+                                                                        📑 Dokumen LHP Asli
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* AUDIT NOTES & VOTING */}
+                                                <div className="space-y-6">
+                                                    <div className={`p-6 rounded-[2.5rem] border ${t.audit.status === 'danger' ? 'bg-red-50 border-red-100' : t.audit.status === 'warning' ? 'bg-orange-50 border-orange-100' : 'bg-slate-50 border-slate-100'}`}>
+                                                        <div className="flex justify-between items-start mb-4">
+                                                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Catatan Auditor (KTPP)</p>
+                                                        </div>
+                                                        {t.audit.note ? (
+                                                            <p className="text-sm font-medium text-slate-800 italic leading-relaxed">"{t.audit.note}"</p>
+                                                        ) : (
+                                                            <p className="py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Belum ada catatan konsep temuan.</p>
+                                                        )}
+                                                        
+                                                        {t.audit.phase === 4 && (
+                                                            <button onClick={() => setReportModal({ visible: true, tx: t })} className="w-full mt-6 bg-slate-900 text-white py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition shadow-lg">
+                                                                Lihat Laporan Akhir (LHP) Resmi
+                                                            </button>
+                                                        )}
+                                                    </div>
+
+                                                    {/* VOTING PANEL WITH RESTRICTION OVERLAY */}
+                                                    <div className="bg-white p-6 rounded-[2.5rem] border shadow-sm relative overflow-hidden">
+                                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4 text-center">Kepuasan Transparansi Publik</p>
+                                                        
+                                                        {/* Restriction Overlay for Non-Public */}
+                                                        {currentRole !== 'public' && (
+                                                            <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-10 flex items-center justify-center flex-col p-4 text-center">
+                                                                <div className="bg-red-50 border border-red-200 px-4 py-3 rounded-xl shadow-sm">
+                                                                    <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">Fitur Terkunci</p>
+                                                                    <p className="text-xs font-semibold text-slate-700 mt-1">Hanya masyarakat yang dapat melakukan voting untuk menjaga independensi.</p>
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        <div className="flex justify-between items-center px-2 relative z-0">
+                                                            <button onClick={() => castVote(t.id, 'v-sekali')} className={`vote-btn flex flex-col items-center ${userVote === 'v-sekali' ? 'selected' : ''}`}>
+                                                                <span className="text-xl hover:scale-125 transition-transform">🤩</span>
+                                                                <span className={`text-[9px] font-black mt-1 ${userVote === 'v-sekali' ? 'text-red-600' : 'text-slate-400'}`}>{t.votes['v-sekali']}</span>
+                                                            </button>
+                                                            <button onClick={() => castVote(t.id, 'v-puas')} className={`vote-btn flex flex-col items-center ${userVote === 'v-puas' ? 'selected' : ''}`}>
+                                                                <span className="text-xl hover:scale-125 transition-transform">😊</span>
+                                                                <span className={`text-[9px] font-black mt-1 ${userVote === 'v-puas' ? 'text-red-600' : 'text-slate-400'}`}>{t.votes['v-puas']}</span>
+                                                            </button>
+                                                            <button onClick={() => castVote(t.id, 'v-netral')} className={`vote-btn flex flex-col items-center ${userVote === 'v-netral' ? 'selected' : ''}`}>
+                                                                <span className="text-xl hover:scale-125 transition-transform">😐</span>
+                                                                <span className={`text-[9px] font-black mt-1 ${userVote === 'v-netral' ? 'text-red-600' : 'text-slate-400'}`}>{t.votes['v-netral']}</span>
+                                                            </button>
+                                                            <button onClick={() => castVote(t.id, 'v-kurang')} className={`vote-btn flex flex-col items-center ${userVote === 'v-kurang' ? 'selected' : ''}`}>
+                                                                <span className="text-xl hover:scale-125 transition-transform">😒</span>
+                                                                <span className={`text-[9px] font-black mt-1 ${userVote === 'v-kurang' ? 'text-red-600' : 'text-slate-400'}`}>{t.votes['v-kurang']}</span>
+                                                            </button>
+                                                            <button onClick={() => castVote(t.id, 'v-tidak')} className={`vote-btn flex flex-col items-center ${userVote === 'v-tidak' ? 'selected' : ''}`}>
+                                                                <span className="text-xl hover:scale-125 transition-transform">😡</span>
+                                                                <span className={`text-[9px] font-black mt-1 ${userVote === 'v-tidak' ? 'text-red-600' : 'text-slate-400'}`}>{t.votes['v-tidak']}</span>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
-                                    ` : ''}
-                                </div>
-                                ${t.auditNote ? `
-                                    <p class="text-sm font-medium text-slate-700 italic leading-relaxed">"${t.auditNote}"</p>
-                                ` : `
-                                    <p class="py-4 text-center text-[10px] font-bold text-slate-300 uppercase tracking-widest">Audit Belum Dilakukan</p>
-                                    ${currentRole === 'auditor' ? `<button onclick="openAuditModal('${t.id}')" class="w-full mt-2 bg-slate-900 text-white py-3 rounded-xl text-[10px] font-black uppercase">Lakukan Audit</button>` : ''}
-                                `}
+                                    );
+                                })}
                             </div>
+                        </section>
+                    )}
+                </main>
+            </div>
 
-                            <div class="bg-white p-6 rounded-[2.5rem] border shadow-sm">
-                                <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4 text-center">Kepuasan Transparansi Publik</p>
-                                <div class="flex justify-between items-center px-2">
-                                    <button onclick="castVote('${t.id}', 'v-sekali')" class="vote-btn flex flex-col items-center ${userVote === 'v-sekali' ? 'selected' : ''}">
-                                        <span class="text-xl">🤩</span>
-                                        <span class="text-[9px] font-black mt-1 ${userVote === 'v-sekali' ? 'text-red-600' : 'text-slate-400'}">${t.votes['v-sekali']}</span>
-                                    </button>
-                                    <button onclick="castVote('${t.id}', 'v-puas')" class="vote-btn flex flex-col items-center ${userVote === 'v-puas' ? 'selected' : ''}">
-                                        <span class="text-xl">😊</span>
-                                        <span class="text-[9px] font-black mt-1 ${userVote === 'v-puas' ? 'text-red-600' : 'text-slate-400'}">${t.votes['v-puas']}</span>
-                                    </button>
-                                    <button onclick="castVote('${t.id}', 'v-netral')" class="vote-btn flex flex-col items-center ${userVote === 'v-netral' ? 'selected' : ''}">
-                                        <span class="text-xl">😐</span>
-                                        <span class="text-[9px] font-black mt-1 ${userVote === 'v-netral' ? 'text-red-600' : 'text-slate-400'}">${t.votes['v-netral']}</span>
-                                    </button>
-                                    <button onclick="castVote('${t.id}', 'v-kurang')" class="vote-btn flex flex-col items-center ${userVote === 'v-kurang' ? 'selected' : ''}">
-                                        <span class="text-xl">😒</span>
-                                        <span class="text-[9px] font-black mt-1 ${userVote === 'v-kurang' ? 'text-red-600' : 'text-slate-400'}">${t.votes['v-kurang']}</span>
-                                    </button>
-                                    <button onclick="castVote('${t.id}', 'v-tidak')" class="vote-btn flex flex-col items-center ${userVote === 'v-tidak' ? 'selected' : ''}">
-                                        <span class="text-xl">😡</span>
-                                        <span class="text-[9px] font-black mt-1 ${userVote === 'v-tidak' ? 'text-red-600' : 'text-slate-400'}">${t.votes['v-tidak']}</span>
-                                    </button>
-                                </div>
-                                <p class="text-[8px] text-center text-slate-400 mt-4 italic font-medium">Klik kembali untuk membatalkan atau ganti pilihan langsung.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `; }).join('');
-        }
-
-        window.onload = () => {
-            addRabRow();
-            renderAll();
-        };
-    </script>
-</body>
-</html>
+            {/* TOAST COMPONENT */}
+            <div className={`fixed bottom-10 right-10 p-6 rounded-[2rem] shadow-2xl z-[300] transition-opacity duration-300 font-bold text-sm text-white ${toast.visible ? 'opacity-100' : 'opacity-0 pointer-events-none'} ${toast.isError ? 'bg-red-600' : 'bg-[#0f172a]'}`}>
+                {toast.msg}
+            </div>
+        </div>
+    );
+}
