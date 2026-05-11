@@ -14,27 +14,29 @@
         .role-active { border: 2px solid #b91c1c; background: #450a0a !important; }
         .hidden-element { display: none !important; }
         
-        /* Audit Status Styles */
-        .status-warning { background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; border-left: 6px solid #f97316; }
-        .status-danger { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; border-left: 6px solid #ef4444; animation: pulse-border 2s infinite; }
-        
-        @keyframes pulse-border {
-            0% { border-color: #fecaca; }
-            50% { border-color: #ef4444; box-shadow: 0 0 15px rgba(239, 68, 68, 0.1); }
-            100% { border-color: #fecaca; }
-        }
-
-        .animate-fade { animation: fadeIn 0.4s ease-out; }
+        .animate-fade { animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
-        .vote-btn { transition: all 0.2s; }
-        .vote-btn:hover { transform: scale(1.2); }
-        .vote-btn.active { background: #f1f5f9; border-color: #ef4444; }
-
-        .image-preview { width: 60px; height: 60px; object-fit: cover; border-radius: 12px; border: 1px solid #e2e8f0; }
+        .vote-btn { transition: all 0.2s; position: relative; }
+        .vote-btn:hover { transform: translateY(-5px); }
+        .vote-btn.selected { background: #fee2e2; border-color: #ef4444; border-radius: 1rem; padding: 4px; transform: scale(1.1); }
+        
+        .img-zoom { transition: transform 0.3s ease; cursor: zoom-in; }
+        .img-zoom:hover { transform: scale(1.05); }
+        
+        .modal-overlay { background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(8px); }
     </style>
 </head>
 <body class="bg-[#f8fafc] min-h-screen text-slate-900">
+
+    <!-- Modal Image Preview -->
+    <div id="image-modal" class="fixed inset-0 z-[200] modal-overlay flex items-center justify-center hidden p-4" onclick="closeImageModal()">
+        <div class="relative max-w-4xl w-full flex flex-col items-center">
+            <button class="absolute -top-12 right-0 text-white text-4xl font-light">&times;</button>
+            <img id="modal-img-target" src="" class="max-h-[80vh] w-auto rounded-2xl shadow-2xl border-4 border-white/10">
+            <p id="modal-img-caption" class="text-white mt-6 font-bold text-lg tracking-tight bg-black/40 px-6 py-2 rounded-full"></p>
+        </div>
+    </div>
 
     <!-- Modal Verifikasi Akun -->
     <div id="auth-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[100] flex items-center justify-center hidden">
@@ -87,7 +89,7 @@
             <div class="flex flex-col items-center mb-10 text-center">
                 <img src="https://upload.wikimedia.org/wikipedia/commons/b/bb/Logo_BPK_RI.png" class="h-20 mb-4" alt="Logo BPK RI">
                 <h1 class="text-2xl font-black tracking-tighter italic">TABLIK<span class="text-red-500">DPR</span></h1>
-                <p class="text-[9px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1">Transparansi x Audit BPK</p>
+                <p class="text-[9px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1">Transparansi Visual x Audit</p>
             </div>
 
             <!-- Role Selector -->
@@ -112,11 +114,11 @@
             <nav class="space-y-2 flex-grow">
                 <button onclick="switchTab('dashboard')" id="tab-dashboard" class="nav-tab active w-full flex items-center gap-4 p-4 transition duration-300 font-bold text-sm">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
-                    <span>Beranda</span>
+                    <span>Dashboard Pengawasan</span>
                 </button>
                 <button onclick="switchTab('ledger')" id="tab-ledger" class="nav-tab w-full flex items-center gap-4 p-4 text-slate-400 hover:text-white transition duration-300 font-bold text-sm">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-                    <span>Buku Besar Nota</span>
+                    <span>Audit Transaksi Visual</span>
                 </button>
             </nav>
         </aside>
@@ -126,15 +128,15 @@
             
             <header class="mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                 <div>
-                    <h2 class="text-4xl font-extrabold text-slate-900 tracking-tighter">Panel Transparansi <span class="text-slate-400 italic">DPR RI</span></h2>
-                    <p class="text-slate-500 mt-2 text-sm max-w-lg leading-relaxed">Pengawasan kolektif antara Masyarakat, BPK, dan DPR untuk transparansi anggaran negara.</p>
+                    <h2 class="text-4xl font-extrabold text-slate-900 tracking-tighter">Monitoring <span class="text-red-600">Visual</span> Budget</h2>
+                    <p class="text-slate-500 mt-2 text-sm max-w-lg leading-relaxed">Verifikasi langsung lampiran nota dan bukti barang oleh publik dan auditor.</p>
                 </div>
                 <div id="status-display" class="bg-white border p-5 rounded-[2rem] shadow-sm flex items-center gap-4 min-w-[280px]">
                     <div id="status-icon-circle" class="w-12 h-12 bg-cyan-50 text-cyan-600 rounded-2xl flex items-center justify-center">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                     </div>
                     <div>
-                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Sesi Aktif</p>
+                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Akses Saat Ini</p>
                         <p id="status-label" class="text-sm font-extrabold text-slate-800">Masyarakat Umum</p>
                     </div>
                 </div>
@@ -149,93 +151,85 @@
                 
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                     <div class="space-y-2">
-                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nama Agenda</label>
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nama Kegiatan</label>
                         <input type="text" id="in-kegiatan" placeholder="Judul Kegiatan" class="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm font-semibold border-2 border-transparent focus:border-red-600 transition">
                     </div>
                     <div class="space-y-2">
-                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Pilih Komisi</label>
-                        <select id="in-komisi" class="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm font-bold border-2 border-transparent">
-                            <option>I</option><option>III</option><option>V</option><option>XI</option>
-                        </select>
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">No. Nota / Faktur</label>
+                        <input type="text" id="in-nota" placeholder="No. INV/..." class="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm font-semibold border-2 border-transparent">
                     </div>
                     <div class="space-y-2">
-                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">No. Nota Vendor</label>
-                        <input type="text" id="in-nota" placeholder="INV/..." class="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm font-semibold border-2 border-transparent">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Komisi</label>
+                        <select id="in-komisi" class="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm font-bold">
+                            <option>I</option><option>III</option><option>V</option><option>XI</option>
+                        </select>
                     </div>
                 </div>
 
                 <div class="bg-slate-50 p-8 rounded-[2.5rem] mb-8 border border-slate-100">
                     <div class="flex justify-between items-center mb-6">
-                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Rincian Belanja (RAB)</p>
-                        <button onclick="addRabRow()" class="px-4 py-2 bg-white rounded-xl text-[10px] font-black text-red-600 uppercase border border-red-100 hover:bg-red-50"> + Item</button>
+                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Daftar Belanja (RAB)</p>
+                        <button onclick="addRabRow()" class="px-4 py-2 bg-white rounded-xl text-[10px] font-black text-red-600 uppercase border border-red-100 hover:bg-red-50"> + Item Belanja</button>
                     </div>
-                    <div id="rab-inputs" class="space-y-4">
-                        <!-- RAB rows inserted here -->
-                    </div>
+                    <div id="rab-inputs" class="space-y-4"></div>
                 </div>
 
-                <button onclick="submitAnggaran()" class="w-full bg-slate-950 text-white font-black py-5 rounded-3xl hover:bg-red-600 transition shadow-2xl">KIRIM KE BPK RI</button>
+                <button onclick="submitAnggaran()" class="w-full bg-slate-950 text-white font-black py-5 rounded-3xl hover:bg-red-600 transition shadow-2xl">KIRIM UNTUK AUDIT BPK</button>
             </section>
 
-            <!-- DASHBOARD CONTENT -->
+            <!-- DASHBOARD -->
             <section id="content-dashboard" class="tab-content animate-fade">
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
-                    <div class="bg-white p-7 rounded-[2.5rem] border shadow-sm"><p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 text-center">Total Anggaran</p><h3 id="stat-total" class="text-2xl font-black text-slate-900 text-center italic">Rp 0</h3></div>
-                    <div class="bg-white p-7 rounded-[2.5rem] border shadow-sm border-l-8 border-l-green-500"><p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Audit Clear</p><h3 id="stat-verified" class="text-2xl font-black text-green-600">0</h3></div>
-                    <div class="bg-white p-7 rounded-[2.5rem] border shadow-sm border-l-8 border-l-orange-400"><p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Audit Warning</p><h3 id="stat-warning" class="text-2xl font-black text-orange-500">0</h3></div>
-                    <div class="bg-white p-7 rounded-[2.5rem] border shadow-sm border-l-8 border-l-red-600"><p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Audit Danger</p><h3 id="stat-danger" class="text-2xl font-black text-red-600">0</h3></div>
+                    <div class="bg-white p-7 rounded-[2.5rem] border shadow-sm"><p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 text-center">Total Transaksi Terlapor</p><h3 id="stat-total" class="text-2xl font-black text-slate-900 text-center italic">Rp 0</h3></div>
+                    <div class="bg-white p-7 rounded-[2.5rem] border shadow-sm border-l-8 border-l-green-500"><p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Terverifikasi</p><h3 id="stat-verified" class="text-2xl font-black text-green-600">0</h3></div>
+                    <div class="bg-white p-7 rounded-[2.5rem] border shadow-sm border-l-8 border-l-orange-400"><p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Peringatan</p><h3 id="stat-warning" class="text-2xl font-black text-orange-500">0</h3></div>
+                    <div class="bg-white p-7 rounded-[2.5rem] border shadow-sm border-l-8 border-l-red-600"><p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Indikasi Mark-Up</p><h3 id="stat-danger" class="text-2xl font-black text-red-600">0</h3></div>
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-10">
                     <div class="lg:col-span-2">
-                        <h4 class="font-black text-slate-900 text-xl uppercase tracking-tighter mb-8 flex items-center gap-3">
-                            <img src="https://upload.wikimedia.org/wikipedia/commons/b/bb/Logo_BPK_RI.png" class="h-6" alt="BPK">
-                            Feed Pengawasan Real-Time
-                        </h4>
-                        <div id="audit-feed" class="space-y-5">
-                            <!-- Feed Data -->
-                        </div>
+                        <h4 class="font-black text-slate-900 text-xl uppercase tracking-tighter mb-8 flex items-center gap-3">Feed Transparansi</h4>
+                        <div id="audit-feed" class="space-y-5"></div>
                     </div>
-                    <div class="space-y-6">
-                        <div class="bg-slate-950 p-8 rounded-[3rem] text-white shadow-2xl">
-                            <h4 class="font-black text-lg mb-4">Apresiasi Publik</h4>
-                            <p class="text-xs text-slate-400 leading-relaxed mb-6 italic">Masyarakat dapat memberikan voting kepuasan atas hasil kerja audit BPK dan transparansi DPR.</p>
-                            <div class="p-6 bg-white/5 rounded-3xl border border-white/10 text-center">
-                                <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-4">Indeks Kepuasan Hari Ini</p>
-                                <div class="text-4xl font-black text-cyan-400">84.2%</div>
-                                <div class="mt-4 h-2 bg-white/10 rounded-full overflow-hidden"><div class="h-full bg-cyan-400 w-[84%]"></div></div>
-                            </div>
+                    <div class="bg-slate-900 p-8 rounded-[3rem] text-white shadow-2xl h-fit">
+                        <h4 class="font-black text-lg mb-4">Mekanisme Kontrol</h4>
+                        <p class="text-xs text-slate-400 leading-relaxed mb-6 italic">Gunakan hak suara anda jika menemukan ketidakwajaran dalam lampiran foto barang atau nota.</p>
+                        <div class="p-6 bg-white/5 rounded-3xl border border-white/10 text-center">
+                            <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-4">Total Partisipasi Publik</p>
+                            <div id="total-vote-count" class="text-4xl font-black text-cyan-400">0</div>
                         </div>
                     </div>
                 </div>
             </section>
 
-            <!-- LEDGER CONTENT -->
+            <!-- LEDGER / AUDIT VISUAL -->
             <section id="content-ledger" class="tab-content hidden animate-fade">
-                <div id="ledger-container" class="space-y-12 pb-20">
-                    <!-- Transaksi Detail -->
-                </div>
+                <div id="ledger-container" class="space-y-12 pb-20"></div>
             </section>
 
         </main>
     </div>
 
     <!-- Toast -->
-    <div id="toast" class="fixed bottom-10 right-10 p-6 rounded-[2rem] shadow-2xl z-[200] hidden animate-fade text-white font-bold text-sm"></div>
+    <div id="toast" class="fixed bottom-10 right-10 p-6 rounded-[2rem] shadow-2xl z-[300] hidden animate-fade text-white font-bold text-sm"></div>
 
     <script>
         let currentRole = 'public';
+        let userVotes = {}; // Format: { transactionId: voteType }
+        
         let transactions = [
             {
-                id: "TBL-101", komisi: "XI", kegiatan: "Sosialisasi KUR Nasional", tanggal: "2024-05-18",
-                notaNum: "INV-882", total: 15000000, status: "verified",
-                auditNote: "Anggaran sesuai standar SBM 2024. Dokumen lengkap.",
-                rab: [{ item: "Konsumsi Peserta", qty: 100, price: 150000, sub: 15000000, imgNota: null, imgProduk: null }],
-                votes: { 'p-sekali': 12, 'p-puas': 45, 'p-netral': 5, 'p-kurang': 2, 'p-tidak': 0 }
+                id: "TBL-101", komisi: "XI", kegiatan: "Pengadaan Laptop Sekretariat", tanggal: "2024-05-18",
+                notaNum: "INV-990-JKT", total: 45000000, status: "verified",
+                auditNote: "Barang telah dicek fisik dan spesifikasi sesuai dengan nota terlampir.",
+                rab: [
+                    { item: "MacBook Air M2", qty: 2, price: 22500000, sub: 45000000, imgNota: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=400", imgProduk: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&q=80&w=400" }
+                ],
+                votes: { 'v-sekali': 8, 'v-puas': 12, 'v-netral': 3, 'v-kurang': 1, 'v-tidak': 0 }
             }
         ];
 
-        // --- CORE LOGIC ---
+        // --- CORE FUNCTIONS ---
         function selectRole(role) {
             currentRole = role;
             document.querySelectorAll('.role-badge').forEach(b => b.classList.remove('role-active'));
@@ -243,11 +237,10 @@
             document.getElementById('admin-panel').classList.toggle('hidden-element', role !== 'admin');
             
             const label = document.getElementById('status-label');
-            const iconCircle = document.getElementById('status-icon-circle');
+            if(role === 'admin') label.innerText = "Setjen DPR";
+            else if(role === 'auditor') label.innerText = "BPK Auditor";
+            else label.innerText = "Masyarakat Umum";
             
-            if(role === 'admin') { label.innerText = "Setjen DPR"; iconCircle.className = "w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center"; }
-            else if(role === 'auditor') { label.innerText = "Auditor BPK RI"; iconCircle.className = "w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center"; }
-            else { label.innerText = "Masyarakat Umum"; iconCircle.className = "w-12 h-12 bg-cyan-50 text-cyan-600 rounded-2xl flex items-center justify-center"; }
             renderAll();
         }
 
@@ -275,23 +268,23 @@
             div.className = "p-6 bg-white rounded-3xl border border-slate-100 animate-fade space-y-4";
             div.innerHTML = `
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <input type="text" placeholder="Nama Barang/Jasa" class="p-3 bg-slate-50 rounded-xl text-xs font-semibold name">
+                    <input type="text" placeholder="Item (Contoh: Kertas A4)" class="p-3 bg-slate-50 rounded-xl text-xs font-semibold name">
                     <input type="number" placeholder="Volume" class="p-3 bg-slate-50 rounded-xl text-xs font-semibold qty">
                     <input type="number" placeholder="Harga Satuan" class="p-3 bg-slate-50 rounded-xl text-xs font-semibold price">
-                    <button onclick="document.getElementById('${id}').remove()" class="text-[10px] font-black text-red-400 hover:text-red-600 uppercase tracking-widest">Hapus Item</button>
+                    <button onclick="document.getElementById('${id}').remove()" class="text-[10px] font-black text-red-500 uppercase tracking-widest hover:underline">Hapus</button>
                 </div>
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-2 gap-4 pt-2">
                     <div class="flex items-center gap-3">
-                        <label class="text-[9px] font-black text-slate-400 uppercase">Foto Nota</label>
+                        <label class="text-[9px] font-black text-slate-400 uppercase">Nota (PDF/IMG)</label>
                         <input type="file" onchange="handleFile(this, '${id}', 'nota')" class="hidden" id="file-nota-${id}">
-                        <button onclick="document.getElementById('file-nota-${id}').click()" class="px-3 py-1.5 border rounded-lg text-[9px] font-bold">Pilih File</button>
-                        <img id="prev-nota-${id}" class="image-preview hidden">
+                        <button onclick="document.getElementById('file-nota-${id}').click()" class="px-3 py-1.5 border rounded-lg text-[9px] font-bold">Pilih Nota</button>
+                        <img id="prev-nota-${id}" class="w-12 h-12 object-cover rounded-lg hidden border">
                     </div>
                     <div class="flex items-center gap-3">
-                        <label class="text-[9px] font-black text-slate-400 uppercase">Foto Produk</label>
+                        <label class="text-[9px] font-black text-slate-400 uppercase">Foto Barang</label>
                         <input type="file" onchange="handleFile(this, '${id}', 'prod')" class="hidden" id="file-prod-${id}">
-                        <button onclick="document.getElementById('file-prod-${id}').click()" class="px-3 py-1.5 border rounded-lg text-[9px] font-bold">Pilih File</button>
-                        <img id="prev-prod-${id}" class="image-preview hidden">
+                        <button onclick="document.getElementById('file-prod-${id}').click()" class="px-3 py-1.5 border rounded-lg text-[9px] font-bold">Pilih Barang</button>
+                        <img id="prev-prod-${id}" class="w-12 h-12 object-cover rounded-lg hidden border">
                     </div>
                 </div>
             `;
@@ -339,12 +332,58 @@
                 total, status: 'pending', auditNote: '',
                 notaNum: document.getElementById('in-nota').value || 'TBA',
                 rab,
-                votes: { 'p-sekali': 0, 'p-puas': 0, 'p-netral': 0, 'p-kurang': 0, 'p-tidak': 0 }
+                votes: { 'v-sekali': 0, 'v-puas': 0, 'v-netral': 0, 'v-kurang': 0, 'v-tidak': 0 }
             });
             renderAll();
-            showToast("Anggaran dikirim ke BPK");
+            showToast("Berhasil diajukan!");
+            document.getElementById('in-kegiatan').value = '';
+            document.getElementById('rab-inputs').innerHTML = '';
+            addRabRow();
         }
 
+        // --- VOTING LOGIC ---
+        function castVote(txId, type) {
+            const tx = transactions.find(t => t.id === txId);
+            if(!tx) return;
+
+            // Jika sudah ada vote sebelumnya untuk txId ini
+            if (userVotes[txId]) {
+                const oldType = userVotes[txId];
+                
+                // Jika klik tombol yang sama -> CANCEL VOTE
+                if (oldType === type) {
+                    tx.votes[oldType]--;
+                    delete userVotes[txId];
+                    showToast("Suara Anda telah ditarik kembali");
+                } 
+                // Jika klik tombol berbeda -> PINDAH VOTE
+                else {
+                    tx.votes[oldType]--;
+                    tx.votes[type]++;
+                    userVotes[txId] = type;
+                    showToast("Pilihan Anda telah diubah");
+                }
+            } 
+            // Jika vote baru
+            else {
+                tx.votes[type]++;
+                userVotes[txId] = type;
+                showToast("Terima kasih atas suaranya!");
+            }
+            renderAll();
+        }
+
+        // --- IMAGE MODAL ---
+        function openImageModal(src, caption) {
+            if(!src || src.includes('undefined')) return;
+            document.getElementById('modal-img-target').src = src;
+            document.getElementById('modal-img-caption').innerText = caption;
+            document.getElementById('image-modal').classList.remove('hidden');
+        }
+
+        function closeImageModal() { document.getElementById('image-modal').classList.add('hidden'); }
+
+        // --- AUDIT ACTIONS ---
         function openAuditModal(id) {
             const tx = transactions.find(t => t.id === id);
             document.getElementById('pending-audit-id').value = id;
@@ -364,7 +403,7 @@
             }
             closeAuditModal();
             renderAll();
-            showToast("Laporan BPK Disimpan");
+            showToast("Hasil Audit BPK Telah Disimpan");
         }
 
         function deleteAudit(id) {
@@ -374,16 +413,7 @@
                 tx.auditNote = '';
             }
             renderAll();
-            showToast("Audit Dihapus (Reset ke Pending)");
-        }
-
-        function castVote(id, type) {
-            const tx = transactions.find(t => t.id === id);
-            if(tx) {
-                tx.votes[type]++;
-                renderAll();
-                showToast("Terima kasih atas voting Anda!");
-            }
+            showToast("Audit Dihapus oleh BPK");
         }
 
         // --- VIEW ---
@@ -399,7 +429,7 @@
         function showToast(msg, isError = false) {
             const t = document.getElementById('toast');
             t.innerText = msg;
-            t.className = `fixed bottom-10 right-10 p-6 rounded-[2rem] shadow-2xl z-[200] animate-fade font-bold text-sm text-white ${isError ? 'bg-red-600' : 'bg-[#0f172a]'}`;
+            t.className = `fixed bottom-10 right-10 p-6 rounded-[2rem] shadow-2xl z-[300] animate-fade font-bold text-sm text-white ${isError ? 'bg-red-600' : 'bg-[#0f172a]'}`;
             t.classList.remove('hidden');
             setTimeout(() => t.classList.add('hidden'), 3000);
         }
@@ -411,110 +441,129 @@
             document.getElementById('stat-warning').innerText = transactions.filter(t => t.status === 'warning').length;
             document.getElementById('stat-danger').innerText = transactions.filter(t => t.status === 'danger').length;
 
+            let totalPartisipasi = 0;
+            transactions.forEach(t => {
+                Object.values(t.votes).forEach(v => totalPartisipasi += v);
+            });
+            document.getElementById('total-vote-count').innerText = totalPartisipasi;
+
             const feed = document.getElementById('audit-feed');
             feed.innerHTML = transactions.map(t => `
-                <div class="bg-white p-6 rounded-3xl border flex items-center justify-between border-l-4 
+                <div class="bg-white p-5 rounded-3xl border flex items-center justify-between border-l-4 
                     ${t.status === 'danger' ? 'border-l-red-600' : t.status === 'warning' ? 'border-l-orange-400' : t.status === 'verified' ? 'border-l-green-500' : 'border-l-slate-200'}">
-                    <div class="flex items-center gap-5">
-                        <img src="https://upload.wikimedia.org/wikipedia/commons/b/bb/Logo_BPK_RI.png" class="h-8" alt="BPK">
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-slate-50 rounded-2xl">
+                            <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        </div>
                         <div>
-                            <p class="text-sm font-black text-slate-900">${t.kegiatan}</p>
-                            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">${t.id} • ${formatIDR(t.total)}</p>
+                            <p class="text-xs font-black text-slate-900">${t.kegiatan}</p>
+                            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">${formatIDR(t.total)}</p>
                         </div>
                     </div>
-                    <div class="flex items-center gap-3">
-                        <span class="text-[8px] font-black uppercase px-3 py-1.5 rounded-full ${t.status === 'danger' ? 'bg-red-50 text-red-600' : t.status === 'warning' ? 'bg-orange-50 text-orange-600' : t.status === 'verified' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}">
-                            ${t.status}
-                        </span>
-                    </div>
+                    <span class="text-[8px] font-black uppercase px-3 py-1.5 rounded-full ${t.status === 'danger' ? 'bg-red-50 text-red-600' : t.status === 'warning' ? 'bg-orange-50 text-orange-600' : t.status === 'verified' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}">
+                        ${t.status}
+                    </span>
                 </div>
             `).join('');
 
             const ledger = document.getElementById('ledger-container');
-            ledger.innerHTML = transactions.map(t => `
-                <div class="bg-white rounded-[3.5rem] border shadow-sm overflow-hidden animate-fade">
-                    <div class="p-10 bg-slate-50/50 border-b flex flex-col lg:flex-row justify-between items-center gap-8">
-                        <div class="flex items-center gap-6">
-                            <div class="w-20 h-20 bg-white border rounded-3xl flex items-center justify-center p-4">
+            ledger.innerHTML = transactions.map(t => {
+                const userVote = userVotes[t.id];
+                return `
+                <div class="bg-white rounded-[3rem] border shadow-sm overflow-hidden animate-fade">
+                    <div class="p-8 bg-slate-50/50 border-b flex flex-col md:flex-row justify-between items-center gap-6">
+                        <div class="flex items-center gap-4">
+                            <div class="w-16 h-16 bg-white border rounded-2xl flex items-center justify-center p-3">
                                 <img src="https://upload.wikimedia.org/wikipedia/commons/b/bb/Logo_BPK_RI.png" alt="BPK">
                             </div>
                             <div>
-                                <h4 class="text-2xl font-extrabold text-slate-900 tracking-tighter">${t.kegiatan}</h4>
-                                <span class="text-[9px] bg-slate-900 text-white px-3 py-1 rounded-full font-bold uppercase tracking-widest">${t.id} | Komisi ${t.komisi}</span>
+                                <h4 class="text-xl font-extrabold text-slate-900 tracking-tight">${t.kegiatan}</h4>
+                                <p class="text-[9px] text-slate-400 font-bold uppercase mt-1 tracking-widest">Nota: ${t.notaNum} • Komisi ${t.komisi}</p>
                             </div>
                         </div>
-                        <div class="text-right">
-                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nilai Nota</p>
-                            <p class="text-4xl font-black text-slate-900">${formatIDR(t.total)}</p>
+                        <div class="text-center md:text-right">
+                            <p class="text-3xl font-black text-slate-900 tracking-tighter">${formatIDR(t.total)}</p>
                         </div>
                     </div>
 
-                    <div class="p-10 grid grid-cols-1 lg:grid-cols-2 gap-12">
+                    <div class="p-8 grid grid-cols-1 lg:grid-cols-2 gap-10">
                         <div>
-                            <p class="text-[11px] font-black text-slate-900 uppercase tracking-widest mb-6">Berkas RAB & Bukti</p>
-                            <div class="space-y-6">
+                            <p class="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-4">Lampiran Detail (Klik untuk Preview)</p>
+                            <div class="space-y-4">
                                 ${t.rab.map(r => `
-                                    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                        <div class="flex justify-between font-bold mb-3 text-xs">
-                                            <span>${r.item} (${r.qty}x)</span>
-                                            <span>${formatIDR(r.sub)}</span>
+                                    <div class="p-5 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                                        <div class="flex justify-between items-center mb-4">
+                                            <span class="text-xs font-bold text-slate-800">${r.item} <span class="text-slate-400 ml-1">x${r.qty}</span></span>
+                                            <span class="text-xs font-black text-slate-900">${formatIDR(r.sub)}</span>
                                         </div>
                                         <div class="flex gap-4">
-                                            ${r.imgNota ? `<div class="text-center"><img src="${r.imgNota}" class="w-16 h-16 object-cover rounded-lg border mb-1"><p class="text-[8px] font-bold text-slate-400">NOTA</p></div>` : ''}
-                                            ${r.imgProduk ? `<div class="text-center"><img src="${r.imgProduk}" class="w-16 h-16 object-cover rounded-lg border mb-1"><p class="text-[8px] font-bold text-slate-400">PRODUK</p></div>` : ''}
+                                            ${r.imgNota ? `
+                                                <div class="flex-1">
+                                                    <p class="text-[8px] font-bold text-slate-400 uppercase mb-1">Nota Transaksi</p>
+                                                    <img src="${r.imgNota}" onclick="openImageModal('${r.imgNota}', 'Nota: ${r.item}')" class="w-full h-24 object-cover rounded-xl border-2 border-slate-50 img-zoom">
+                                                </div>
+                                            ` : ''}
+                                            ${r.imgProduk ? `
+                                                <div class="flex-1">
+                                                    <p class="text-[8px] font-bold text-slate-400 uppercase mb-1">Bukti Barang</p>
+                                                    <img src="${r.imgProduk}" onclick="openImageModal('${r.imgProduk}', 'Produk: ${r.item}')" class="w-full h-24 object-cover rounded-xl border-2 border-slate-50 img-zoom">
+                                                </div>
+                                            ` : ''}
                                         </div>
                                     </div>
                                 `).join('')}
                             </div>
                         </div>
 
-                        <div class="space-y-8">
-                            <div class="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 relative">
-                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Laporan Hasil Pemeriksaan BPK</p>
+                        <div class="space-y-6">
+                            <div class="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-100">
+                                <div class="flex justify-between items-start mb-4">
+                                    <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest">Catatan Auditor BPK</p>
+                                    ${currentRole === 'auditor' && t.auditNote ? `
+                                        <div class="flex gap-2">
+                                            <button onclick="openAuditModal('${t.id}')" class="text-[8px] font-black text-blue-600 uppercase underline">Edit</button>
+                                            <button onclick="deleteAudit('${t.id}')" class="text-[8px] font-black text-red-600 uppercase underline">Hapus</button>
+                                        </div>
+                                    ` : ''}
+                                </div>
                                 ${t.auditNote ? `
-                                    <p class="text-sm italic text-slate-600 font-medium">"${t.auditNote}"</p>
-                                    <div class="mt-4 flex gap-2">
-                                        ${currentRole === 'auditor' ? `
-                                            <button onclick="openAuditModal('${t.id}')" class="text-[9px] font-black text-blue-600 uppercase underline">Edit Audit</button>
-                                            <button onclick="deleteAudit('${t.id}')" class="text-[9px] font-black text-red-600 uppercase underline ml-4">Hapus Audit</button>
-                                        ` : ''}
-                                    </div>
-                                ` : `<p class="py-6 text-center text-[11px] font-black text-slate-300 italic uppercase">Belum Diaudit</p>`}
-                                
-                                ${currentRole === 'auditor' && !t.auditNote ? `
-                                    <button onclick="openAuditModal('${t.id}')" class="w-full mt-6 bg-slate-900 text-white py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-orange-600 transition">Mulai Audit</button>
-                                ` : ''}
+                                    <p class="text-sm font-medium text-slate-700 italic leading-relaxed">"${t.auditNote}"</p>
+                                ` : `
+                                    <p class="py-4 text-center text-[10px] font-bold text-slate-300 uppercase tracking-widest">Audit Belum Dilakukan</p>
+                                    ${currentRole === 'auditor' ? `<button onclick="openAuditModal('${t.id}')" class="w-full mt-2 bg-slate-900 text-white py-3 rounded-xl text-[10px] font-black uppercase">Lakukan Audit</button>` : ''}
+                                `}
                             </div>
 
-                            <div class="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
-                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 text-center">Voting Kepuasan Masyarakat</p>
-                                <div class="flex justify-between items-center px-4">
-                                    <button onclick="castVote('${t.id}', 'p-sekali')" class="vote-btn flex flex-col items-center">
-                                        <span class="text-2xl">🤩</span>
-                                        <span class="text-[9px] font-bold mt-1 text-slate-400">${t.votes['p-sekali']}</span>
+                            <div class="bg-white p-6 rounded-[2.5rem] border shadow-sm">
+                                <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4 text-center">Kepuasan Transparansi Publik</p>
+                                <div class="flex justify-between items-center px-2">
+                                    <button onclick="castVote('${t.id}', 'v-sekali')" class="vote-btn flex flex-col items-center ${userVote === 'v-sekali' ? 'selected' : ''}">
+                                        <span class="text-xl">🤩</span>
+                                        <span class="text-[9px] font-black mt-1 ${userVote === 'v-sekali' ? 'text-red-600' : 'text-slate-400'}">${t.votes['v-sekali']}</span>
                                     </button>
-                                    <button onclick="castVote('${t.id}', 'p-puas')" class="vote-btn flex flex-col items-center">
-                                        <span class="text-2xl">😊</span>
-                                        <span class="text-[9px] font-bold mt-1 text-slate-400">${t.votes['p-puas']}</span>
+                                    <button onclick="castVote('${t.id}', 'v-puas')" class="vote-btn flex flex-col items-center ${userVote === 'v-puas' ? 'selected' : ''}">
+                                        <span class="text-xl">😊</span>
+                                        <span class="text-[9px] font-black mt-1 ${userVote === 'v-puas' ? 'text-red-600' : 'text-slate-400'}">${t.votes['v-puas']}</span>
                                     </button>
-                                    <button onclick="castVote('${t.id}', 'p-netral')" class="vote-btn flex flex-col items-center">
-                                        <span class="text-2xl">😐</span>
-                                        <span class="text-[9px] font-bold mt-1 text-slate-400">${t.votes['p-netral']}</span>
+                                    <button onclick="castVote('${t.id}', 'v-netral')" class="vote-btn flex flex-col items-center ${userVote === 'v-netral' ? 'selected' : ''}">
+                                        <span class="text-xl">😐</span>
+                                        <span class="text-[9px] font-black mt-1 ${userVote === 'v-netral' ? 'text-red-600' : 'text-slate-400'}">${t.votes['v-netral']}</span>
                                     </button>
-                                    <button onclick="castVote('${t.id}', 'p-kurang')" class="vote-btn flex flex-col items-center">
-                                        <span class="text-2xl">😒</span>
-                                        <span class="text-[9px] font-bold mt-1 text-slate-400">${t.votes['p-kurang']}</span>
+                                    <button onclick="castVote('${t.id}', 'v-kurang')" class="vote-btn flex flex-col items-center ${userVote === 'v-kurang' ? 'selected' : ''}">
+                                        <span class="text-xl">😒</span>
+                                        <span class="text-[9px] font-black mt-1 ${userVote === 'v-kurang' ? 'text-red-600' : 'text-slate-400'}">${t.votes['v-kurang']}</span>
                                     </button>
-                                    <button onclick="castVote('${t.id}', 'p-tidak')" class="vote-btn flex flex-col items-center">
-                                        <span class="text-2xl">😡</span>
-                                        <span class="text-[9px] font-bold mt-1 text-slate-400">${t.votes['p-tidak']}</span>
+                                    <button onclick="castVote('${t.id}', 'v-tidak')" class="vote-btn flex flex-col items-center ${userVote === 'v-tidak' ? 'selected' : ''}">
+                                        <span class="text-xl">😡</span>
+                                        <span class="text-[9px] font-black mt-1 ${userVote === 'v-tidak' ? 'text-red-600' : 'text-slate-400'}">${t.votes['v-tidak']}</span>
                                     </button>
                                 </div>
+                                <p class="text-[8px] text-center text-slate-400 mt-4 italic font-medium">Klik kembali untuk membatalkan atau ganti pilihan langsung.</p>
                             </div>
                         </div>
                     </div>
                 </div>
-            `).join('');
+            `; }).join('');
         }
 
         window.onload = () => {
